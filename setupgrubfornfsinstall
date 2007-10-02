@@ -57,6 +57,7 @@
 # 14.06.2007: smarter arch detection so the (any arch) menu entries are not required anymore
 # 24.07.2007: print error if serverlist is missing instead of silently not offering autofs
 #             add option to install script locally
+# 01.08.2007: add support for qemu
 # 02.08.2007: grep for autofs in /proc/mounts instead of automount
 # 04.10.2007: support download.opensuse.org
 # 30.11.2007: add another special case for sles9
@@ -102,10 +103,28 @@ reqcmd dialog
 reqcmd curl
 reqcmd file
 
+shellquote()
+{
+    for arg; do
+        arg=${arg/\$/\\\$}
+        arg=${arg/\"/\\\"}
+        arg=${arg/\`/\\\`}
+        arg=${arg/\\/\\\\}
+        echo -n " \"$arg\""
+    done 
+}
+
 curl=curl
 greparch=1
 is64bit=
 readonlymode=
+qemu=
+qemu_disk=
+qemu_mem=
+qemu_params=
+qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
+localinstpath=
+parted=/usr/sbin/parted
 
 helpandquit()
 {
@@ -120,18 +139,38 @@ OPTIONS:
 	--64		install x86_64 version even when run from an i386 install
 	--32		install i386 version even when run from an x86_64 install
 	--readonly	don't actually write files
+	--qemu[=binary]	use qemu
 EOF
 	exit 0
 }
 
 while [ "$#" -gt 0 ]; do
-	case "$1" in
-		--anyarch) greparch=0; shift ;;
-		--64) is64bit=1; shift ;;
-		--32) is64bit=0; shift ;;
+	param="$1"
+	arg="$2"
+	shift
+	case "$param" in
+		--*=*)
+			arg=${param#*=}
+			param=${param%%=*}
+			set -- "----noarg=$PARAM" "$@"
+		;;
+	esac
+	case "$param" in
+		--anyarch) greparch=0 ;;
+		--64) is64bit=1 ;;
+		--32) is64bit=0 ;;
 		--readonly|--dry-run|-n) readonlymode='yes'; shift ;;
+		--qemu)
+			if [ -n "$arg" -a "$arg" = "${arg#-}" ]; then
+				qemu="$arg"
+				shift
+			else
+				qemu='qemu'
+			fi
+		;;
 		--help|-h) helpandquit ;;
-		--) shift; break ;;
+		----noarg) echo "$arg does not take an argument"; exit 1; break ;;
+		--) break ;;
 		-*) echo "unknown option: $1"; exit 1; break ;;
 		*) break ;;
 	esac
@@ -224,21 +263,22 @@ isfedora=
 ipparams=
 vncssh=
 
-if which stat >/dev/null 2>&1; then
-	freemb=`stat -f -c '%f*%s' /boot`
-	eval freemb="\$(($freemb/1024/1024))"
-	[ -z "$freemb" ] && freemb=0
-	if [ "$freemb" -lt 10 ]; then
-		dialog "${bgt[@]}" --yesno "/boot has only $freemb MB free which may not be sufficient for kernel and initrd. Continue anyways?" $h $w || die
+if [ -z "$qemu" ]; then
+	if which stat >/dev/null 2>&1; then
+		freemb=`stat -f -c '%f*%s' /boot`
+		eval freemb="\$(($freemb/1024/1024))"
+		[ -z "$freemb" ] && freemb=0
+		if [ "$freemb" -lt 10 ]; then
+			dialog "${bgt[@]}" --yesno "/boot has only $freemb MB free which may not be sufficient for kernel and initrd. Continue anyways?" $h $w || die
+		fi
+		unset freemb
 	fi
-	unset freemb
-fi
 
-if [ -z "$bootloader" ]; then
-	dialog "${bgt[@]}" --msgbox "Unsupported bootloader, assuming grub in read only mode" $h $w || die
-	bootloader=grub
-	readonlymode=yes
-fi
+	if [ -z "$bootloader" ]; then
+		dialog "${bgt[@]}" --msgbox "Unsupported bootloader, assuming grub in read only mode" $h $w || die
+		bootloader=grub
+		readonlymode=yes
+	fi
 
 case "$bootloader" in
 	lilo)
@@ -253,8 +293,12 @@ case "$bootloader" in
 		fi
 		;;
 esac
+fi
 
-if [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
+if [ -n "$qemu" ]; then
+	reqcmd qemu
+	reqcmd smbd
+elif [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
 	dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable, read only mode" $h $w || die
 	readonlymode=yes
 fi
@@ -504,9 +548,12 @@ mediatypedialog()
 		dialog "${bgt[@]}" --msgbox "Warning: The installation source does not provide GPG keys. YOU may not work because of this." $h $w || die
 	fi
 
-	dialog "${bgt[@]}" --menu "Choose Media Type" $h $w $mh 0 FTP 1 NFS 2 SLP 2> $TMPFILE || die
-
-	read ret < $TMPFILE
+	if [ -z "$qemu" ]; then
+		dialog "${bgt[@]}" --menu "Choose Media Type" $h $w $mh 0 FTP 1 NFS 2 SLP 2> $TMPFILE || die
+		read ret < $TMPFILE
+	else
+		ret=3
+	fi
 	case "$ret" in
 		0)
 			resolveordie "$host"
@@ -519,16 +566,20 @@ mediatypedialog()
 		2)
 			insturl=slp
 		;;
+		3)
+			insturl=
+		;;
 		*) die
 		;;
 	esac
 
+	localinstpath=$autofsbase$instpath
 	local suffix=''
-	if [ "$is64bit" = '1' -a -e $autofsbase$instpath$kernelpath/linux64 ]; then
+	if [ "$is64bit" = '1' -a -e $localinstpath$kernelpath/linux64 ]; then
 		suffix=64
 	fi
-	kernelurl=file://$autofsbase$instpath$kernelpath/linux$suffix
-	initrdurl=file://$autofsbase$instpath$kernelpath/initrd$suffix
+	kernelurl=file://$localinstpath$kernelpath/linux$suffix
+	initrdurl=file://$localinstpath$kernelpath/initrd$suffix
 }
 
 partitiondialog()
@@ -677,6 +728,10 @@ makebootparams()
 		fi
 		bootparams="${bootparams}ramdisk_size=65536 install=$insturl$autoyast$ipparams$vncssh"
 	fi
+
+	if [ -n "$qemu" ]; then
+		params="${params}clock=pit "
+	fi
 }
 
 bootparamdialog()
@@ -698,7 +753,7 @@ autodetecttypedialog()
 
 	which "slptool" > /dev/null 2>&1 || haveslptool=0
 
-	if [ "$haveslptool" = 1 ]; then
+	if [ -z "$qemu" -a "$haveslptool" = 1 ]; then
 		msg="SLP scan"
 		if [ -e /proc/net/ip_tables_names ]; then
 			if iptables -vnL INPUT 2>/dev/null | grep -c DROP &>/dev/null; then
@@ -1026,6 +1081,18 @@ case "$?" in
 		;;
 esac
 
+if [ -n "$qemu" ]; then
+	if [ -z "$localinstpath" ]; then
+		if [ -n "$insturl" -a "$insturl" != "${insturl#file://}" ]; then
+			localinstpath="${insturl#file://}"
+		else
+			dialog "${bgt[@]}" --msgbox "Cannot determine local mount point for installation source" $h $w
+			die
+		fi
+	fi
+	insturl=smb://10.0.2.4/qemu/${localinstpath##*/}
+fi
+
 if [ -z "$kernelurl" -o -z "$initrdurl" ]; then
 	dialog "${bgt[@]}" --msgbox "No installation sources found" $h $w
 	die
@@ -1054,6 +1121,87 @@ done
 makebootparams
 
 clear
+
+if [ -n "$qemu" ]; then
+	if [ "$kernelurl" = "${kernelurl#file://}" ]; then
+		dialog "${bgt[@]}" --msgbox "Kernel URL ist not of type 'file://'" $h $w
+		die
+	fi
+	if [ "$initrdurl" = "${initrdurl#file://}" ]; then
+		dialog "${bgt[@]}" --msgbox "Initrd URL ist not of type 'file://'" $h $w
+		die
+	fi
+
+	if [ -z "$qemu_mem" ]; then
+		qemu_mem=(`stat -f -c "%f %S" /dev/shm/`)
+		qemu_mem=$((qemu_mem[0]*qemu_mem[1]/3*2/1024/1024))
+	fi
+
+	dialog "${bgt[@]}" --inputbox "qemu RAM in MB" $h $w $qemu_mem 2> $TMPFILE || die
+	read qemu_mem < $TMPFILE
+
+	dialog "${bgt[@]}" --inputbox "Additional qemu options" $h $w "$qemu_params"  2> $TMPFILE || die
+	read qemu_params < $TMPFILE
+
+	if [ -z "$qemu_disk" ]; then
+		for i in "${qemu_image_dirs[@]}"; do
+			if [ -e "$i/$dist.img" ]; then
+				qemu_disk="$i/$dist.img"
+				break;
+			fi
+		done
+	fi
+
+	if [ -z "$qemu_disk" ]; then
+		for i in "${qemu_image_dirs[@]}"; do
+			if [ -w "$i" ]; then
+				qemu_disk="$i/$dist.img"
+				break;
+			fi
+		done
+	fi
+
+	while true; do
+		dialog "${bgt[@]}" --inputbox "QEMU disk image" $h $w "$qemu_disk" 2> $TMPFILE || die
+		read qemu_disk < $TMPFILE
+
+		if [ -z "$qemu_disk" ]; then
+			dialog "${bgt[@]}" --msgbox "no disk image specified" $h $w
+			continue
+		fi
+
+		if [ -e "$qemu_disk" -a ! -w "$qemu_disk" ]; then
+			dialog "${bgt[@]}" --msgbox "$qemu_disk is not writeable" $h $w
+			continue
+		fi
+
+		if [ ! -e "$qemu_disk" ]; then
+			qemu_disk_size="4096"
+			dialog "${bgt[@]}" --inputbox "QEMU disk size in MB" $h $w $qemu_disk_size 2> $TMPFILE || die
+			read qemu_disk_size < $TMPFILE
+
+			clear
+			mktemp "$qemu_disk" || die
+			dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
+			if [ -x "$parted" ]; then
+				"$parted" -s "$qemu_disk" mklabel msdos
+				"$parted" -s "$qemu_disk" mkpart primary linux-swap 0 100MB
+			fi
+			break
+		else
+			clear
+			break
+		fi
+	done
+
+	set -- $qemu -kernel "${kernelurl#file://}" -initrd "${initrdurl#file://}" -smb ${localinstpath%/*} -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
+	shellquote "$@"
+	echo
+	"$@"
+	stat="$?"
+	echo "run with $qemu -hda $qemu_disk -m $qemu_mem $qemu_params"
+	exit $stat
+fi
 
 set -e
 
@@ -1161,9 +1309,7 @@ if [ "$readonlymode" != yes ]; then
 	EOF
 	chmod 755 $imagedir/kexec
 	echo "kexec script generated as $imagedir/kexec"
-fi
 
-if [ "$readonlymode" != yes ]; then
 	if [ "$bootloader" = "lilo" ]; then
 		dialog "${bgt[@]}" --msgbox "You need to run 'lilo' before rebooting" $h $w || die
 	fi
