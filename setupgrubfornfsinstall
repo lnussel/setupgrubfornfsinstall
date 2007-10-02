@@ -1,0 +1,887 @@
+#!/bin/bash
+
+# GPL
+# Dialog based wizard to create a suitable entry in the lilo or grub config
+# file for network installation
+#
+# sample entry for slp config on server:
+#
+# service:install.suse:ftp://192.168.1.1/SUSE-10.0-DVD/CD1,en,65535
+# description=0 SUSE LINUX 10.0 [FTP]
+#
+# via slp this script only offers http and ftp sources
+#
+# ChangeLog:
+# 19.05.2004: slp support
+# 25.08.2004: --anyarch parameter, splash support
+# 17.12.2004: verify that downloaded file is indeed a kernel instead of a error message
+# 24.02.2005: dialog replacing --anyarch, better display of slp urls
+# 03.06.2005: add --64 parameter to be able to prepare e.g. x86_64 from an i386 install
+#             add -n parameter for dry-run
+# 08.06.2005: move server list into external file
+# 10.07.2005: warn about missing GPG keys
+# 21.07.2005: don't delete image dir at exit ...
+# 09.08.2005: ask for 64bit if in 32bit mode on x86_64
+# 25.08.2005: support for entering the url manually
+#             add check for free space in /boot
+# 05.09.2005: lilo fixes
+# 16.11.2005: support 10.1 style of disc layout
+# 15.12.2005: - ... and another layout (jw)
+#             - use previous path component of an url if last one is
+#               only an arch string 12.01.2006: generate kexec script
+# 30.01.2006: support new layout via SLP
+# 17.02.2006: fix installing x86_64 version when i386 disto is booted
+# 02.03.2006: fallback to getent ahosts
+# 06.03.2006: also support files in DVD1 instead of CD1 directory
+# 28.04.2006: - use curl to probe for instead of guessing kernel
+#               location on media
+#             - add --help (yay!)
+# 19.03.2007: also grep for SLED
+# 10.04.2007: add --32 parameter to be able to prepare ix86 on x86_64 (mhopf)
+# 14.06.2007: smarter arch detection so the (any arch) menu entries are not required anymore
+# 24.07.2007: print error if serverlist is missing instead of silently not offering autofs
+#             add option to install script locally
+# 02.08.2007: grep for autofs in /proc/mounts instead of automount
+
+
+# by Ludwig Nussel <lnussel@suse.de>
+
+#########################
+
+unset ${!LC_*}
+export LANG=POSIX
+export LC_COLLATE=POSIX
+ 
+shopt -s nullglob
+
+warning()
+{
+    echo "Warning:" "$*" >&2
+}
+
+error()
+{
+    echo "Error:" "$*" >&2
+}
+
+reqcmd()
+{
+	if ! which "$1" > /dev/null 2>&1; then
+		 echo "The command \"$1\" is needed for this script" >&2
+		 exit 1
+	fi
+}
+
+reqcmd dialog
+reqcmd curl
+reqcmd file
+
+curl=curl
+greparch=1
+is64bit=
+readonlymode=
+
+helpandquit()
+{
+	cat <<EOF
+Usage: $0 [OPTIONS]
+Downloads kernel and initrd from a network installation server and appends an
+entry to the bootloader config that starts the installation.
+
+Only i386 and x86_64 are supported at this time.
+
+OPTIONS:
+	--64		install x86_64 version even when run from an i386 install
+	--32		install i386 version even when run from an x86_64 install
+	--readonly	don't actually write files
+EOF
+	exit 0
+}
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--anyarch) greparch=0; shift ;;
+		--64) is64bit=1; shift ;;
+		--32) is64bit=0; shift ;;
+		--readonly|--dry-run|-n) readonlymode='yes'; shift ;;
+		--help|-h) helpandquit ;;
+		--) shift; break ;;
+		-*) echo "unknown option: $1"; exit 1; break ;;
+		*) break ;;
+	esac
+done
+
+removefiles=()
+declare -a  removefiles
+push_removeonexit()
+{
+    removefiles[${#removefiles[@]}]="$1"
+}
+
+pop_removeonexit()
+{
+    unset removefiles[$((${#removefiles[@]}-1))]
+}
+
+cleanup()
+{
+    local file
+    for file in "${removefiles[@]}"; do
+	    [ -z "$file" ] && continue
+	    rm -rf "$file"
+    done
+}
+trap cleanup EXIT
+
+
+TMPFILE=`mktemp -q /tmp/distinst.XXXXXX`
+if [ $? -ne 0 ]; then
+echo "$0: Can't create temp file, exiting..."
+	exit 1
+fi
+
+push_removeonexit "$TMPFILE"
+
+die()
+{
+    local ret=1
+    trap EXIT
+    cleanup
+    case "$1" in
+	[0-9]) ret="$1"; shift ;;
+    esac
+    [ -n "$*" ] && error "$*"
+    exit $ret
+}
+
+read LINES COLUMNS < <(stty size)
+
+bgt=("--backtitle" "Prepare installation of distribution")
+
+if dialog --help 2>&1 |grep -q cdialog; then
+	h=0;
+	w=0;
+	mh=0;
+	defaultno="--defaultno"
+	bgt[${#bgt[@]}]="--aspect"
+	bgt[${#bgt[@]}]="16"
+else
+	h=$((LINES-5))
+	w=$((COLUMNS-4))
+	mh=$((h-7))
+	defaultno=
+fi
+
+echo=
+
+getbootloader()
+{
+	. /etc/sysconfig/bootloader
+	echo $LOADER_TYPE
+}
+
+: ${bootloader:=`getbootloader`}
+bootloaderconf=
+imagedir=/boot/loader
+autofsbase=/mounts
+program="$0"
+serverlist="$program.serverlist"
+vga=
+splash=
+bootparams=
+kernelurl=
+initrdurl=
+insturl=
+host=
+basepath=
+
+if which stat >/dev/null 2>&1; then
+	freemb=`stat -f -c '%f*%s' /boot`
+	eval freemb="\$(($freemb/1024/1024))"
+	[ -z "$freemb" ] && freemb=0
+	if [ "$freemb" -lt 10 ]; then
+		dialog "${bgt[@]}" --yesno "/boot has only $freemb MB free which may not be sufficient for kernel and initrd. Continue anyways?" $h $w || die
+	fi
+	unset freemb
+fi
+
+if [ -z "$bootloader" ]; then
+	dialog "${bgt[@]}" --msgbox "Unsupported bootloader, assuming grub in read only mode" $h $w || die
+	bootloader=grub
+	readonlymode=yes
+fi
+
+case "$bootloader" in
+	lilo)
+		bootloaderconf=/etc/lilo.conf
+		;;
+	grub)
+		bootloaderconf=/boot/grub/menu.lst
+		grubpartition=`awk '/^root/ {print $2;exit}' < /etc/grub.conf`
+		;;
+esac
+
+if [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
+	dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable, read only mode" $h $w || die
+	readonlymode=yes
+fi
+
+if [ "$readonlymode" = "yes" ]; then
+	bootloaderconf=/dev/stdout
+	echo=echo
+	bgt[1]="${bgt[1]} (dry-run)"
+else
+	curl="$curl --progress-bar"
+fi
+
+arch=${SETUP_ARCH:-`uname -m`}
+case $arch in
+	i?86) arch=i386 ;;
+esac
+
+if [ -z "$is64bit" ]; then
+	case "`uname -m`" in
+		*64) is64bit=1 ;;
+		i?86)
+			if grep -q 'flags.*\<lm\>' /proc/cpuinfo; then
+				dialog "${bgt[@]}" --yesno "Install x86_64 version?" $h $w && {
+					is64bit=1
+					arch=x86_64
+				}
+			else
+				is64bit=0
+			fi
+		;;
+		*) is64bit=0 ;;
+	esac
+fi
+if [ "$is64bit" = 0 ]; then
+	case $arch in
+		x86_64) arch=i386 ;;
+	esac
+fi
+
+
+# probe whether given url exists
+curlprobe()
+{
+	local url="$1"
+	$curl -o /dev/null -I -f -s "$url" || return 1
+}
+
+# return ip in $ip
+resolveordie()
+{
+	local socktype
+	local fqdn
+	while read ip socktype fqdn; do
+		[ "$socktype" = "STREAM" ] && return 0
+	done < <(getent ahostsv4 "$1")
+	while read ip socktype fqdn; do
+		[ "$socktype" = "STREAM" ] && return 0
+	done < <(getent ahosts "$1")
+	ip=
+	dialog "${bgt[@]}" --msgbox "cannot resolve IP address for $1" $h $w
+	die
+}
+
+askhost()
+{
+	local hosts
+	local hostpaths
+	local descrs
+	local rh
+	local rp
+	local rd
+	declare -a hosts
+	declare -a hostpaths
+	declare -a descrs
+
+while read rh rp rd; do
+	hosts[${#hosts[@]}]="$rh"
+	hostpaths[${#hostpaths[@]}]="$rp"
+	descrs[${#descrs[@]}]="$rd"
+done < "$serverlist"
+
+	local menustr
+	local i=0
+	declare -a menustr
+	for p in "${descrs[@]}"; do
+		menustr[$((i*2))]="$i"
+		menustr[$((i*2+1))]="${descrs[$i]}"
+		i=$((i+1))
+	done
+	dialog "${bgt[@]}" --menu "Choose Installation Source" $h $w $mh "${menustr[@]}" 2> $TMPFILE || die
+
+	i=0
+	read i < $TMPFILE
+	host=${hosts[$i]}
+	[ -z "$host" ] && die
+	basepath="/$host/${hostpaths[$i]}"
+	[ -z "$basepath" ] && die
+}
+
+hostdialog()
+{
+	if [ ! -r "$serverlist" ]; then
+		dialog "${bgt[@]}" --msgbox "A list of servers ($serverlist) is required to scan autofs mounts" $h $w
+		die
+	elif [ ! -d "$autofsbase" ]; then
+		dialog "${bgt[@]}" --msgbox "The autofs directory $autofsbase does not exist" $h $w
+		die
+	else
+		askhost
+	fi
+
+	return 0
+}
+
+grepdists()
+{
+	grep -i '^[0-9]\|^full\|^stable-\|Prof\|Pers\|DVD\|FTP\|Snapshot\|Preview\|Beta\|SLES\|SLED\|-SLP$\|^next\|RC.$\|Alpha\|Build' | \
+	grep -v '\.data$' |
+	(if [ "$greparch" = 1 ]; then
+		case "$arch" in
+			*86)
+				grep '386\|i686\|x86' | grep -v 'x86[-_]64'
+			;;
+			x86_64)
+				grep 'x86_64\|x86-64\|x86'
+			;;
+			*)
+				grep "$arch"
+			;;
+		esac
+	else
+		cat
+	fi
+	) | \
+	sort -r
+}
+
+askanyarch()
+{
+	dialog "${bgt[@]}" --yesno "No distribution for this architecture found in $basepath.\n\nShow all architectures?" $h $w || die
+	greparch=0
+}
+
+distrodialog()
+{
+	local distros
+	local i
+	local d
+	local a
+	local menustr
+	declare -a distros
+	i=0
+	menustr=""
+	a="$arch"
+	[ "$a" != 'i386' ] || a='i586'
+	for dist in $autofsbase$basepath/*; do
+		instpath=${dist#$autofsbase}
+		if findkernel && [ "$greparch" = 0 -o -d "$autofsbase$instpath/suse/a1" -o -d "$autofsbase$instpath/suse/$a" ]; then
+			dist=${dist##*/}
+			distros[$i]=$dist;
+			menustr="$menustr $i $dist"
+			i=$((i+1))
+		fi
+	done
+
+	numdist=$i;
+
+	if [ $numdist = 0 ]; then
+#		if [ "$greparch" != 0 ]; then
+#			askanyarch
+#			return 1
+#		else
+			dialog "${bgt[@]}" --msgbox "No $arch distributions found in $basepath" $h $w
+			die
+#		fi
+	fi
+
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh $menustr 2> $TMPFILE || die
+
+	read ret < $TMPFILE
+	dist=${distros[$ret]}
+	return 0
+}
+
+# set instpath and kernelpath
+findkernel()
+{
+	local cddvd
+	for cddvd in CD1 DVD1; do
+		if [ -d $autofsbase$instpath/$arch/$cddvd/boot/$arch/loader ]; then
+			instpath=$instpath/$arch/$cddvd
+			kernelpath=/boot/$arch/loader
+			return 0
+		elif [ -d $autofsbase$instpath/$cddvd/boot/$arch/loader ]; then
+			instpath=$instpath/$cddvd
+			kernelpath=/boot/$arch/loader
+			return 0
+		elif [ -d $autofsbase$instpath/$arch/$cddvd/boot/loader ]; then
+			instpath=$instpath/$arch/$cddvd
+			kernelpath=/boot/loader
+			return 0
+		elif [ -d $autofsbase$instpath/$cddvd/boot/loader ]; then
+			instpath=$instpath/$cddvd
+			kernelpath=/boot/loader
+			return 0
+		elif [ -d $autofsbase$instpath/$cddvd/suse/images/boot ]; then
+			instpath=$instpath/$cddvd
+			kernelpath=/suse/images/boot
+			return 0
+		fi
+	done
+	if [ -d $autofsbase$instpath/boot/$arch/loader ]; then
+		kernelpath=/boot/$arch/loader
+		return 0
+	elif [ -d $autofsbase$instpath/boot/loader ]; then
+		kernelpath=/boot/loader
+		return 0
+	elif [ -d $autofsbase$instpath/suse/images/boot ]; then
+		kernelpath=/suse/images/boot
+		return 0
+	fi
+	return 1
+}
+
+mediatypedialog()
+{
+	kernelpath=
+	instpath=$basepath/$dist
+
+	if ! findkernel; then
+		dialog "${bgt[@]}" --msgbox "Invalid/Unsupported distribution (no kernel/initrd found)" $h $w
+		die
+	fi
+
+	if [ -z "`echo $autofsbase/$instpath/*.asc`" ]; then
+		dialog "${bgt[@]}" --msgbox "Warning: The installation source does not provide GPG keys. YOU may not work because of this." $h $w || die
+	fi
+
+	dialog "${bgt[@]}" --menu "Choose Media Type" $h $w $mh 0 FTP 1 NFS 2 SLP 2> $TMPFILE || die
+
+	read ret < $TMPFILE
+	case "$ret" in
+		0)
+			resolveordie "$host"
+			insturl=ftp://$ip/${instpath#*/*/}
+		;;
+		1)
+			resolveordie "$host"
+			insturl=nfs://$ip$instpath
+		;;
+		2)
+			insturl=slp
+		;;
+		*) die
+		;;
+	esac
+
+	local suffix=''
+	if [ "$is64bit" = '1' -a -e $autofsbase$instpath$kernelpath/linux64 ]; then
+		suffix=64
+	fi
+	kernelurl=file://$autofsbase$instpath$kernelpath/linux$suffix
+	initrdurl=file://$autofsbase$instpath$kernelpath/initrd$suffix
+}
+
+partitiondialog()
+{
+	if [ "$bootloader" = grub ]; then
+		dialog "${bgt[@]}" --inputbox "grub partition, e.g. (hd0,5)" $h $w $grubpartition 2> $TMPFILE || die
+		read grubpartition < $TMPFILE
+	fi
+}
+
+autoyastdialog()
+{
+# by ories
+	dialog "${bgt[@]}" --yesno "Skip AutoYaST parameters?" $h $w
+	ret=$?
+
+	menustr="nfs nfs http http file file"
+	autoyast=""
+
+	if [ $ret -ne 0 ]; then
+		dialog "${bgt[@]}" --menu "client description source media" $h $w $mh $menustr  2> $TMPFILE || die 
+		read desc_media < $TMPFILE
+		autoyast=" autoyast=$desc_media://"
+
+		if [ "$desc_media" != "file" ]; then
+			dialog "${bgt[@]}" --inputbox "ip & path for description source server" $h $w 2> $TMPFILE || die
+			read desc_ip < $TMPFILE
+			autoyast="$autoyast$desc_ip"
+		fi
+		dialog "${bgt[@]}" --inputbox "name of description file" $h $w 2> $TMPFILE || die
+		read desc_file < $TMPFILE
+		autoyast="$autoyast/$desc_file"
+		dialog "${bgt[@]}" --yesno "Is client a dhcp client?" $h $w
+		ret=$?
+		if [ $ret -ne 0 ]; then
+			dialog "${bgt[@]}" --inputbox "Client ip" $h $w 2> $TMPFILE || die
+			read client_ip < $TMPFILE
+			[ $client_ip != "" ] && autoyast="$autoyast ip=$client_ip"
+			dialog "${bgt[@]}" --inputbox "Client netmask" $h $w 2> $TMPFILE || die
+			read client_netmask < $TMPFILE
+			[ $client_netmask != "" ] && autoyast="$autoyast netmask=$client_netmask"
+			dialog "${bgt[@]}" --inputbox "Client gateway" $h $w 2> $TMPFILE || die
+			read client_gateway < $TMPFILE
+			[ $client_gateway != "" ] && autoyast="$autoyast gateway=$client_gateway"
+		fi
+	fi
+}
+
+vgadialog()
+{
+	local vgaparams
+	local descrs
+	declare -a vgaparams
+	declare -a descrs
+	vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
+	descrs=("1024x768" "Textmode" "640x480" "800x600" "1280x1024" "Normal")
+
+	local menustr=""
+	local i=0
+	for p in "${descrs[@]}"; do
+		menustr="$menustr $i ${descrs[$i]}"
+		i=$((i+1))
+	done
+	dialog "${bgt[@]}" --menu "Choose Resolution" $h $w $mh $menustr 2> $TMPFILE || die
+
+	i=0
+	read i < $TMPFILE
+	vga=${vgaparams[$i]}
+	[ -z "$vga" ] && die
+	splash=${descrs[$i]}
+	case "$splash" in
+		*[0-9]x[0-9]*)
+			splash=`printf "%04d%04d.spl\n" ${splash/x/ }`
+		;;
+		*) splash="" ;;
+	esac
+}
+
+bootparamdialog()
+{
+	local params=''
+	if [ "$bootloader" != "lilo" ]; then
+		params="$vga "
+	fi
+	params="${params}ramdisk_size=65536 install=$insturl$autoyast"
+	dialog "${bgt[@]}" --inputbox "Following parameters will be used" $h $w "$params"  2> $TMPFILE || die
+	read bootparams < $TMPFILE
+}
+
+# returns 0 -> slp, 1 -> nfs, 2 -> manual
+autodetecttypedialog()
+{
+	local i=0
+	local haveslptool=1
+	local menu cmds
+	declare -a menustr
+	declare -a cmds
+	local msg
+
+	which "slptool" > /dev/null 2>&1 || haveslptool=0
+
+	if [ "$haveslptool" = 1 ]; then
+		msg="SLP scan"
+		if [ -e /proc/net/ip_tables_names ]; then
+			if iptables -vnL INPUT 2>/dev/null | grep -c DROP &>/dev/null; then
+				msg="$msg [may not work due to firewall]"
+			fi
+		fi
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$msg"
+		cmds[$i]=:
+		i=$((i+1))
+#		menu[$((i*2))]=$i
+#		menu[$((i*2+1))]="SLP scan (any arch)"
+#		cmds[$i]="greparch=0"
+#		i=$((i+1))
+	fi
+
+	if grep -q autofs /proc/mounts; then
+		msg="scan autofs NFS mounts"
+		if [ ! -r "$serverlist" -o ! -d "$autofsbase" ]; then
+			msg="$msg (unavailable)"
+		fi
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$msg"
+		cmds[$i]="return 1"
+		i=$((i+1))
+#		menu[$((i*2))]=$i
+#		menu[$((i*2+1))]="scan autofs NFS mounts (any arch)"
+#		cmds[$i]="greparch=0; return 1"
+#		i=$((i+1))
+	fi
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="specify URL manually"
+	cmds[$i]="greparch=0; return 2"
+	i=$((i+1))
+
+	if [ "$USER" != lnussel -a "$program" != "${program#/suse/lnussel/bin/}" ]; then
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="install this script locally"
+		cmds[$i]="return 3"
+		i=$((i+1))
+	fi
+
+	dialog "${bgt[@]}" --menu "Choose Installation Source" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+
+	i=0
+	read i < $TMPFILE
+
+	eval ${cmds[$i]}
+
+	return 0;
+}
+
+url2txt()
+{
+	local url txt tmp
+	url="$1"
+	case $url in 
+		*/CD1*) txt=${url%/CD1*} ;;
+		*/DVD1*) txt=${url%/DVD1*} ;;
+		*) txt="$url"
+	esac
+	txt=${txt%/}
+	case "$txt" in
+		*/i386|*/x86[-_]64|*/ppc|*/s390|*/s390x|*/ppc64|*/ia64)
+		tmp=${txt##*/};
+		txt="${txt%/$tmp} [$tmp]";;
+	esac
+	txt=${txt##*/}
+	echo "$txt"
+}
+
+# takes $insturl and creates $kernelurl and $initrdurl
+kernelurl_from_insturl()
+{
+	if curlprobe "$insturl/boot/$arch/loader/linux"; then
+		kernelurl="$insturl/boot/$arch/loader/linux"
+		initrdurl="$insturl/boot/$arch/loader/initrd"
+	else
+		kernelurl="$insturl/boot/loader/linux"
+		initrdurl="$insturl/boot/loader/initrd"
+	fi
+	if [ "$is64bit" = '1' ] && curlprobe "$kernelurl"64; then
+		kernelurl="$kernelurl"64
+		initrdurl="$initrdurl"64
+	fi
+	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
+	dist=`url2txt "$insturl"`
+
+	return 0
+}
+
+slpdialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+	local protocol addr txt tmp
+
+	dialog "${bgt[@]}" --infobox "scanning for SLP sources. This may take some time." $h $w
+	
+	slptool findsrvs service:install.suse | sed 's/^service:install.suse://;s/,.*$//;/^[^fh]/d' > $TMPFILE
+
+	while [ "$retry" -gt 0 ]; do
+		while read url; do
+			urls[${#urls[@]}]="$url"
+			protocol=${url%%://*}
+			addr=${url#*://}
+			addr=${addr%%/*}
+			txt=`url2txt "$url"`
+			menu[$((i*2))]=$i
+			menu[$((i*2+1))]="$protocol $txt ($addr)"
+			i=$((i+1))
+		done < <( { if [ "$retry" = 1 ]; then cat; else grepdists; fi } < $TMPFILE)
+
+		if [ "${#urls[@]}" -gt 0 ]; then
+			dialog "${bgt[@]}" --menu "Choose Installation Source" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+
+			i=0
+			read i < $TMPFILE
+			insturl=${urls[$i]}
+			retry=0
+		else
+			retry=$((retry-1))
+		fi
+	done
+
+	if [ -z "$insturl" ]; then
+		dialog "${bgt[@]}" --msgbox "No SLP source found" $h $w
+		return 1
+	fi
+
+	kernelurl_from_insturl
+}
+
+manualurldialog()
+{
+	dialog "${bgt[@]}" --inputbox "Please enter the full URL to the first installation CD" $h $w "" 2> $TMPFILE || die
+	read insturl < $TMPFILE
+
+	kernelurl_from_insturl
+}
+
+localinstall()
+{
+	local bindir="$HOME/bin"
+	dialog "${bgt[@]}" --yesno "install to $bindir?" $h $w || die
+	[ -d "$bindir" ] || install -d -m 755 "$bindir"
+	install -m 755 "$program" "$bindir"
+	install -m 644 "$serverlist" "$bindir"
+	echo "installed to $bindir"
+	die 0
+}
+
+autodetecttypedialog 
+case "$?" in
+	0)
+		slpdialog
+		;;
+	1)
+		if hostdialog; then
+			while ! distrodialog; do : ;done
+			mediatypedialog
+		fi
+		;;
+	2)
+		manualurldialog
+		;;
+	3)
+		localinstall
+		;;
+esac
+
+if [ -z "$kernelurl" -o -z "$initrdurl" ]; then
+	dialog "${bgt[@]}" --msgbox "No installation sources found" $h $w
+	die
+fi
+vgadialog
+bootparamdialog
+
+clear
+
+set -e
+
+if [ "$readonlymode" != yes ]; then
+	imagedir=`mktemp -d -q $imagedir-XXXXXX`
+	if [ $? -ne 0 ]; then
+		dialog "${bgt[@]}" --msgbox "Can't create directory in /boot" $h $w
+		die
+	fi
+	echo "Copying files..."
+fi
+
+$echo mkdir -p "$imagedir"
+# pop doesn't work, no idea why
+#[ "$readonlymode" != yes ] && push_removeonexit "$imagedir"
+
+$echo $curl -f -o "$imagedir"/linux "$kernelurl"
+$echo $curl -f -o "$imagedir"/initrd "$initrdurl"
+
+if [ "$readonlymode" != yes ]; then
+	case "`file $imagedir/linux`" in
+		*Linux*[Kk]ernel*) ;;
+		*)
+			error "downloaded file $imagedir/linux is not a linux kernel:"
+			xxd "$imagedir/linux" | head >&2
+			die
+		;;
+	esac
+
+	case "`file $imagedir/initrd`" in
+		*gzip\ compressed\ data*initrd*) ;;
+		*)
+			error "downloaded file $imagedir/initrd is not a linux initrd"
+			xxd "$imagedir/initrd" | head
+			die
+		;;
+	esac
+
+	if [ "$readonlymode" != "yes" -a -n "$splash" ]; then
+		splash="${kernelurl%/*}/$splash"
+		if $echo $curl -f -o "$imagedir"/splash "$splash"; then
+			case "`file $imagedir/splash`" in
+				*data*) ;;
+				*)
+					warning "downloaded file $imagedir/splash doesn't look like a splash screen";
+					rm -f "$imagedir/splash"
+				;;
+			esac
+
+			if [ -f "$imagedir"/splash ]; then
+				cat "$imagedir"/splash >> "$imagedir"/initrd
+				rm -f "$imagedir"/splash
+			fi
+		else
+			echo "no splash support"
+		fi
+	fi
+fi
+
+#[ "$readonlymode" != yes ] && pop_removeonexit
+
+[ "$readonlymode" = yes ] && echo -e "\nAppend the following entry to your bootloader config:"
+
+case "$bootloader" in
+	lilo)
+		lilo_label="inst_$host"
+		n=1
+		while grep -q "label = $lilo_label\$" /etc/lilo.conf; do
+			lilo_label="inst_${host}_$n"
+			n=$((n+1))
+		done
+		echo "" >> $bootloaderconf
+		echo "image = $imagedir/linux" >> $bootloaderconf
+		echo "	label = $lilo_label" >> $bootloaderconf
+		echo "	vga = 791" >> $bootloaderconf
+		echo "	initrd = $imagedir/initrd" >> $bootloaderconf
+		echo "	append = \"$bootparams\"" >> $bootloaderconf
+		;;
+	grub)
+		echo "" >> $bootloaderconf
+		echo "title Installation $host/$dist" >> $bootloaderconf
+		echo "    kernel $grubpartition$imagedir/linux $bootparams" >> $bootloaderconf
+		echo "    initrd $grubpartition$imagedir/initrd" >> $bootloaderconf
+		;;
+esac
+
+if [ "$readonlymode" != yes ]; then
+	cat <<-EOF > $imagedir/kexec
+		#!/bin/sh
+		sleeptime=1
+		echo "ready?"
+		mount -no remount,ro / || {
+			sleeptime=5
+		}
+		sync
+		echo "set."
+		sleep \$sleeptime
+		sync
+		mount -nt proc proc /proc
+		kexec -l --reset-vga --command-line="$bootparams" --initrd="$imagedir/initrd" -x $imagedir/linux
+		echo "go!"
+		kexec -e
+	EOF
+	chmod 755 $imagedir/kexec
+	echo "kexec script generated as $imagedir/kexec"
+fi
+
+if [ "$readonlymode" != yes ]; then
+	if [ "$bootloader" = "lilo" ]; then
+		dialog "${bgt[@]}" --msgbox "You need to run 'lilo' before rebooting" $h $w || die
+	fi
+	echo "Done"
+fi
