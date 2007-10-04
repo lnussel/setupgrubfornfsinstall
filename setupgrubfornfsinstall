@@ -394,6 +394,9 @@ distrodialog()
 	menustr=""
 	a="$arch"
 	[ "$a" != 'i386' ] || a='i586'
+
+	dialog "${bgt[@]}" --infobox "scanning NFS directory..." $h $w
+
 	for dist in $autofsbase$basepath/*; do
 		instpath=${dist#$autofsbase}
 		if findkernel && [ "$greparch" = 0 -o -d "$autofsbase$instpath/suse/a1" -o -d "$autofsbase$instpath/suse/$a" ]; then
