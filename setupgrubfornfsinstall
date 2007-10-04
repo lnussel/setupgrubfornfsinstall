@@ -774,7 +774,7 @@ opensuse_org_dialog()
 	http://download.opensuse.org/distribution/SL-10.0-OSS/inst-source/ 10.0
 	EOF
 
-	dialog "${bgt[@]}" --menu "Choose Installation Source" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
 	i=0
 	read i < $TMPFILE
 	insturl=${urls[$i]}
