@@ -58,6 +58,7 @@
 # 24.07.2007: print error if serverlist is missing instead of silently not offering autofs
 #             add option to install script locally
 # 02.08.2007: grep for autofs in /proc/mounts instead of automount
+# 04.10.2007: support download.opensuse.org
 
 
 # by Ludwig Nussel <lnussel@suse.de>
@@ -635,14 +636,19 @@ autodetecttypedialog()
 	fi
 
 	menu[$((i*2))]=$i
-	menu[$((i*2+1))]="specify URL manually"
+	menu[$((i*2+1))]="openSUSE.org"
 	cmds[$i]="greparch=0; return 2"
+	i=$((i+1))
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="specify URL manually"
+	cmds[$i]="greparch=0; return 3"
 	i=$((i+1))
 
 	if [ "$USER" != lnussel -a "$program" != "${program#/suse/lnussel/bin/}" ]; then
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="install this script locally"
-		cmds[$i]="return 3"
+		cmds[$i]="return 4"
 		i=$((i+1))
 	fi
 
@@ -742,6 +748,38 @@ slpdialog()
 	kernelurl_from_insturl
 }
 
+opensuse_org_dialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+
+	while read url name; do
+		urls[${#urls[@]}]="$url"
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$name"
+		i=$((i+1))
+#FIXME: move to external file
+	done <<-EOF
+	http://download.opensuse.org/distribution/10.3/repo/oss/ 10.3
+	http://download.opensuse.org/distribution/10.2/repo/oss/ 10.2
+	http://download.opensuse.org/distribution/SL-10.1/inst-source/ 10.1
+	http://download.opensuse.org/distribution/SL-10.0-OSS/inst-source/ 10.0
+	EOF
+
+	dialog "${bgt[@]}" --menu "Choose Installation Source" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	insturl=${urls[$i]}
+
+	kernelurl_from_insturl
+	dist=${menu[$((i*2+1))]}
+}
+
 manualurldialog()
 {
 	dialog "${bgt[@]}" --inputbox "Please enter the full URL to the first installation CD" $h $w "" 2> $TMPFILE || die
@@ -773,9 +811,12 @@ case "$?" in
 		fi
 		;;
 	2)
-		manualurldialog
+		opensuse_org_dialog
 		;;
 	3)
+		manualurldialog
+		;;
+	4)
 		localinstall
 		;;
 esac
