@@ -399,7 +399,7 @@ distrodialog()
 
 	for dist in $autofsbase$basepath/*; do
 		instpath=${dist#$autofsbase}
-		if findkernel && [ "$greparch" = 0 -o -d "$autofsbase$instpath/suse/a1" -o -d "$autofsbase$instpath/suse/$a" ]; then
+		if findkernel && [ "$greparch" = 0 -o "${instpath//$arch}" != "$instpath" -o -d "$autofsbase$instpath/suse/a1" -o -d "$autofsbase$instpath/suse/$a" ]; then
 			dist=${dist##*/}
 			distros[$i]=$dist;
 			menustr="$menustr $i $dist"
@@ -461,6 +461,10 @@ findkernel()
 		return 0
 	elif [ -d $autofsbase$instpath/suse/images/boot ]; then
 		kernelpath=/suse/images/boot
+		return 0
+	elif [ -d $autofsbase$instpath/$arch/boot/loader ]; then # sles9
+		instpath=$instpath/$arch
+		kernelpath=/boot/loader
 		return 0
 	fi
 	return 1
