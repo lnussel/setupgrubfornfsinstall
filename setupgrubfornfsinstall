@@ -211,6 +211,7 @@ initrdurl=
 insturl=
 host=
 basepath=
+isfedora=
 
 if which stat >/dev/null 2>&1; then
 	freemb=`stat -f -c '%f*%s' /boot`
@@ -567,7 +568,11 @@ vgadialog()
 	local descrs
 	declare -a vgaparams
 	declare -a descrs
-	vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
+	if [ -n "$isfedora" ]; then
+		vgaparams=("graphical resolution=1024x768" "text" "graphical resolution=640x480" "graphical resolution=800x600" "graphical resolution=1280x1024" "")
+	else
+		vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
+	fi
 	descrs=("1024x768" "Textmode" "640x480" "800x600" "1280x1024" "Normal")
 
 	local menustr=""
@@ -582,22 +587,28 @@ vgadialog()
 	read i < $TMPFILE
 	vga=${vgaparams[$i]}
 	[ -z "$vga" ] && die
-	splash=${descrs[$i]}
-	case "$splash" in
-		*[0-9]x[0-9]*)
-			splash=`printf "%04d%04d.spl\n" ${splash/x/ }`
-		;;
-		*) splash="" ;;
-	esac
+	if [ -z "$isfedora" ]; then
+		splash=${descrs[$i]}
+		case "$splash" in
+			*[0-9]x[0-9]*)
+				splash=`printf "%04d%04d.spl\n" ${splash/x/ }`
+			;;
+			*) splash="" ;;
+		esac
+	fi
 }
 
 bootparamdialog()
 {
 	local params=''
-	if [ "$bootloader" != "lilo" ]; then
-		params="$vga "
+	if [ -n "$isfedora" ]; then
+		params="$vga method=$insturl"
+	else
+		if [ "$bootloader" != "lilo" ]; then
+			params="$vga "
+		fi
+		params="${params}ramdisk_size=65536 install=$insturl$autoyast"
 	fi
-	params="${params}ramdisk_size=65536 install=$insturl$autoyast"
 	dialog "${bgt[@]}" --inputbox "Following parameters will be used" $h $w "$params"  2> $TMPFILE || die
 	read bootparams < $TMPFILE
 }
@@ -652,14 +663,19 @@ autodetecttypedialog()
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="fedora.redhat.com"
+	cmds[$i]="greparch=0; isfedora=1; return 3"
+	i=$((i+1))
+
+	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="specify URL manually"
-	cmds[$i]="greparch=0; return 3"
+	cmds[$i]="greparch=0; return 98"
 	i=$((i+1))
 
 	if [ "$USER" != lnussel -a "$program" != "${program#/suse/lnussel/bin/}" ]; then
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="install this script locally"
-		cmds[$i]="return 4"
+		cmds[$i]="return 99"
 		i=$((i+1))
 	fi
 
@@ -706,6 +722,18 @@ kernelurl_from_insturl()
 		kernelurl="$kernelurl"64
 		initrdurl="$initrdurl"64
 	fi
+	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
+	dist=`url2txt "$insturl"`
+
+	return 0
+}
+
+kernelurl_from_insturl_fedora()
+{
+	insturl=$insturl/$arch/os
+	kernelurl=$insturl/isolinux/vmlinuz
+	initrdurl=$insturl/isolinux/initrd.img
+
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
 	dist=`url2txt "$insturl"`
 
@@ -791,6 +819,36 @@ opensuse_org_dialog()
 	dist=${menu[$((i*2+1))]}
 }
 
+fedora_dialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+
+	while read url name; do
+		urls[${#urls[@]}]="$url"
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$name"
+		i=$((i+1))
+#FIXME: move to external file
+	done <<-EOF
+	http://download.fedora.redhat.com/pub/fedora/linux/releases/8/Fedora 8
+	http://download.fedora.redhat.com/pub/fedora/linux/releases/7/Fedora 7
+	EOF
+
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	insturl=${urls[$i]}
+
+	kernelurl_from_insturl_fedora
+	dist=${menu[$((i*2+1))]}
+}
+
 manualurldialog()
 {
 	dialog "${bgt[@]}" --inputbox "Please enter the full URL to the first installation CD" $h $w "" 2> $TMPFILE || die
@@ -825,9 +883,12 @@ case "$?" in
 		opensuse_org_dialog
 		;;
 	3)
+		fedora_dialog
+		;;
+	98)
 		manualurldialog
 		;;
-	4)
+	99)
 		localinstall
 		;;
 esac
@@ -859,22 +920,32 @@ $echo mkdir -p "$imagedir"
 $echo $curl -f -o "$imagedir"/linux "$kernelurl"
 $echo $curl -f -o "$imagedir"/initrd "$initrdurl"
 
+file_error_ask_continue()
+{
+	local file="$1"
+	error "downloaded file $file is not a linux initrd"
+	xxd "$imagedir/initrd" | head
+	read -p "--- press enter to contine..."
+	dialog "${bgt[@]}" --yesno "downloaded file $file is not a linux initrd. Continue anyways?" $h $w || die
+}
+
 if [ "$readonlymode" != yes ]; then
 	case "`file $imagedir/linux`" in
 		*Linux*[Kk]ernel*) ;;
 		*)
-			error "downloaded file $imagedir/linux is not a linux kernel:"
-			xxd "$imagedir/linux" | head >&2
-			die
+			file_error_ask_continue "$imagedir/linux"
 		;;
 	esac
 
 	case "`file $imagedir/initrd`" in
 		*gzip\ compressed\ data*initrd*) ;;
+		*gzip\ compressed\ data*)
+			if [ -z "$isfedora" ]; then
+				file_error_ask_continue "$imagedir/initrd"
+			fi
+		;;
 		*)
-			error "downloaded file $imagedir/initrd is not a linux initrd"
-			xxd "$imagedir/initrd" | head
-			die
+			file_error_ask_continue "$imagedir/initrd"
 		;;
 	esac
 
