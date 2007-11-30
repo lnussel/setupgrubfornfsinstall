@@ -462,6 +462,10 @@ findkernel()
 	elif [ -d $autofsbase$instpath/suse/images/boot ]; then
 		kernelpath=/suse/images/boot
 		return 0
+	elif [ -d $autofsbase$instpath/$arch/boot.prefer/loader ]; then # sles9
+		instpath=$instpath/$arch
+		kernelpath=/boot.prefer/loader
+		return 0
 	elif [ -d $autofsbase$instpath/$arch/boot/loader ]; then # sles9
 		instpath=$instpath/$arch
 		kernelpath=/boot/loader
