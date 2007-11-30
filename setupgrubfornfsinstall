@@ -59,6 +59,8 @@
 #             add option to install script locally
 # 02.08.2007: grep for autofs in /proc/mounts instead of automount
 # 04.10.2007: support download.opensuse.org
+# 30.11.2007: add another special case for sles9
+#             fedora support just for fun
 
 
 # by Ludwig Nussel <lnussel@suse.de>
