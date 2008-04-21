@@ -61,7 +61,8 @@
 # 04.10.2007: support download.opensuse.org
 # 30.11.2007: add another special case for sles9
 #             fedora support just for fun
-
+# 18.04.2008: add opensuse factory
+#             use /boot/install_$host_$dist_* instead of /boot/loader-*
 
 # by Ludwig Nussel <lnussel@suse.de>
 
@@ -201,7 +202,7 @@ getbootloader()
 
 : ${bootloader:=`getbootloader`}
 bootloaderconf=
-imagedir=/boot/loader
+imagedir=/boot
 autofsbase=/mounts
 program="$0"
 serverlist="$program.serverlist"
@@ -906,6 +907,7 @@ clear
 
 set -e
 
+imagedir="$imagedir/install_${host//[^a-zA-Z0-9.\-]/_}_${dist//[^a-zA-Z0-9.\-]/_}"
 if [ "$readonlymode" != yes ]; then
 	imagedir=`mktemp -d -q $imagedir-XXXXXX`
 	if [ $? -ne 0 ]; then
