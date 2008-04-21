@@ -809,7 +809,7 @@ opensuse_org_dialog()
 	http://download.opensuse.org/distribution/10.3/repo/oss/ 10.3
 	http://download.opensuse.org/distribution/10.2/repo/oss/ 10.2
 	http://download.opensuse.org/distribution/SL-10.1/inst-source/ 10.1
-	http://download.opensuse.org/distribution/SL-10.0-OSS/inst-source/ 10.0
+	http://download.opensuse.org/distribution/SL-OSS-factory/inst-source/ Factory
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
