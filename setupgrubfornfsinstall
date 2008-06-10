@@ -63,6 +63,7 @@
 #             fedora support just for fun
 # 18.04.2008: add opensuse factory
 #             use /boot/install_$host_$dist_* instead of /boot/loader-*
+# 10.06.2008: only run kexec -l in kexec script
 
 # by Ludwig Nussel <lnussel@suse.de>
 
@@ -1004,19 +1005,7 @@ esac
 if [ "$readonlymode" != yes ]; then
 	cat <<-EOF > $imagedir/kexec
 		#!/bin/sh
-		sleeptime=1
-		echo "ready?"
-		mount -no remount,ro / || {
-			sleeptime=5
-		}
-		sync
-		echo "set."
-		sleep \$sleeptime
-		sync
-		mount -nt proc proc /proc
-		kexec -l --reset-vga --command-line="$bootparams" --initrd="$imagedir/initrd" -x $imagedir/linux
-		echo "go!"
-		kexec -e
+		exec kexec -l --reset-vga --command-line="$bootparams" --initrd="$imagedir/initrd" -x $imagedir/linux
 	EOF
 	chmod 755 $imagedir/kexec
 	echo "kexec script generated as $imagedir/kexec"
