@@ -64,6 +64,7 @@
 # 18.04.2008: add opensuse factory
 #             use /boot/install_$host_$dist_* instead of /boot/loader-*
 # 10.06.2008: only run kexec -l in kexec script
+# 12.06.2008: add 11.0
 
 # by Ludwig Nussel <lnussel@suse.de>
 
@@ -808,6 +809,7 @@ opensuse_org_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	http://download.opensuse.org/distribution/11.0/repo/oss/ 11.0
 	http://download.opensuse.org/distribution/10.3/repo/oss/ 10.3
 	http://download.opensuse.org/distribution/10.2/repo/oss/ 10.2
 	http://download.opensuse.org/distribution/SL-10.1/inst-source/ 10.1
