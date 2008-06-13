@@ -241,6 +241,10 @@ case "$bootloader" in
 	grub)
 		bootloaderconf=/boot/grub/menu.lst
 		grubpartition=`awk '/^root/ {print $2;exit}' < /etc/grub.conf`
+		# 11.0 doesn't write root statement to grub.conf anymore
+		if [ -z "$grubpartition" ]; then
+			 grubpartition=`awk '$1 == "gfxmenu" {if(match($2, /\((hd[[:digit:]]+,[[:digit:]]+)\)/,arr)) { print arr[0];exit}}' < /boot/grub/menu.lst`
+		fi
 		;;
 esac
 
@@ -524,8 +528,12 @@ mediatypedialog()
 partitiondialog()
 {
 	if [ "$bootloader" = grub ]; then
-		dialog "${bgt[@]}" --inputbox "grub partition, e.g. (hd0,5)" $h $w $grubpartition 2> $TMPFILE || die
+		dialog "${bgt[@]}" --inputbox "grub partition, e.g. hd0,5" $h $w $grubpartition 2> $TMPFILE || die
 		read grubpartition < $TMPFILE
+		if [ -n "$grubpartition" ]; then
+			[ ${grubpartition:0-1:1} -eq ')' ] || grubpartition="$grubpartition)"
+			[ ${grubpartition:0:1} -eq '(' ] || grubpartition="($grubpartition"
+		fi
 	fi
 }
 
@@ -904,6 +912,9 @@ if [ -z "$kernelurl" -o -z "$initrdurl" ]; then
 	die
 fi
 vgadialog
+if [ -z "$grubpartition" ]; then
+	partitiondialog
+fi
 bootparamdialog
 
 clear
