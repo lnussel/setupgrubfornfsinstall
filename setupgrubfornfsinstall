@@ -599,7 +599,6 @@ vgadialog()
 	i=0
 	read i < $TMPFILE
 	vga=${vgaparams[$i]}
-	[ -z "$vga" ] && die
 	if [ -z "$isfedora" ]; then
 		splash=${descrs[$i]}
 		case "$splash" in
@@ -850,8 +849,9 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	http://download.fedora.redhat.com/pub/fedora/linux/releases/8/Fedora 8
-	http://download.fedora.redhat.com/pub/fedora/linux/releases/7/Fedora 7
+	http://download.fedora.redhat.com/pub/fedora/linux/releases/9/Fedora Fedora 9
+	http://download.fedora.redhat.com/pub/fedora/linux/releases/8/Fedora Fedora 8
+	http://download.fedora.redhat.com/pub/fedora/linux/releases/7/Fedora Fedora 7
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
