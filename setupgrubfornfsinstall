@@ -217,6 +217,8 @@ insturl=
 host=
 basepath=
 isfedora=
+ipparams=
+vncssh=
 
 if which stat >/dev/null 2>&1; then
 	freemb=`stat -f -c '%f*%s' /boot`
@@ -559,18 +561,67 @@ autoyastdialog()
 		dialog "${bgt[@]}" --inputbox "name of description file" $h $w 2> $TMPFILE || die
 		read desc_file < $TMPFILE
 		autoyast="$autoyast/$desc_file"
-		dialog "${bgt[@]}" --yesno "Is client a dhcp client?" $h $w
-		ret=$?
-		if [ $ret -ne 0 ]; then
-			dialog "${bgt[@]}" --inputbox "Client ip" $h $w 2> $TMPFILE || die
-			read client_ip < $TMPFILE
-			[ $client_ip != "" ] && autoyast="$autoyast ip=$client_ip"
-			dialog "${bgt[@]}" --inputbox "Client netmask" $h $w 2> $TMPFILE || die
-			read client_netmask < $TMPFILE
-			[ $client_netmask != "" ] && autoyast="$autoyast netmask=$client_netmask"
-			dialog "${bgt[@]}" --inputbox "Client gateway" $h $w 2> $TMPFILE || die
-			read client_gateway < $TMPFILE
-			[ $client_gateway != "" ] && autoyast="$autoyast gateway=$client_gateway"
+	fi
+}
+
+ipsettingsdialog()
+{
+	local client_ip=
+	local client_gateway=
+	local client_netmask=
+	local client_nameserver=
+
+	if dialog "${bgt[@]}" --inputbox "IP Address/maskbits" $h $w 2> $TMPFILE; then
+		read client_ip < $TMPFILE
+		if [ -n "$client_ip" ]; then
+			if [ "$client_ip" = ${client_ip%%/*} ] && dialog "${bgt[@]}" --inputbox "Netmask" $h $w 2> $TMPFILE; then
+				read client_netmask < $TMPFILE
+			fi
+			if dialog "${bgt[@]}" --inputbox "Gateway" $h $w 2> $TMPFILE; then
+				read client_gateway < $TMPFILE
+			fi
+			if dialog "${bgt[@]}" --inputbox "Nameserver" $h $w 2> $TMPFILE; then
+				read client_nameserver < $TMPFILE
+			fi
+		else
+			client_ip=
+		fi
+	else
+		client_ip=
+	fi
+	if [ -n "$client_ip" -a -n "$client_netmask" ]; then
+		ipparams=" hostip=$client_ip netmask=$client_netmask"
+		[ -z "$client_gateway" ] || ipparams="$ipparams gateway=$client_gateway"
+		[ -z "$client_nameserver" ] || ipparams="$ipparams nameserver=$client_nameserver"
+	else
+		dialog "${bgt[@]}" --msgbox "No valid IP entered, using DHCP" $h $w
+	fi
+}
+
+sshdialog()
+{
+	local password=
+
+	if dialog "${bgt[@]}" --inputbox "SSH password" $h $w 2> $TMPFILE; then
+		read password < $TMPFILE
+		if [ -n "$password" ]; then
+			vncssh=" usessh=1 sshpassword=$password panic=30"
+		else
+			dialog "${bgt[@]}" --msgbox "password to short" $h $w
+		fi
+	fi
+}
+
+vncdialog()
+{
+	local password=
+
+	if dialog "${bgt[@]}" --inputbox "VNC password (>= eight characters)" $h $w 2> $TMPFILE; then
+		read password < $TMPFILE
+		if [ -n "$password" -a "${#password}" -ge 8 ]; then
+			vncssh=" usevnc=1 vncpassword=$password panic=30"
+		else
+			dialog "${bgt[@]}" --msgbox "password to short" $h $w
 		fi
 	fi
 }
@@ -610,18 +661,24 @@ vgadialog()
 	fi
 }
 
-bootparamdialog()
+makebootparams()
 {
-	local params=''
+	[ -z "$bootparams" ] || return 0
+
 	if [ -n "$isfedora" ]; then
-		params="$vga method=$insturl"
+		bootparams="$vga method=$insturl"
 	else
 		if [ "$bootloader" != "lilo" ]; then
-			params="$vga "
+			bootparams="$vga "
 		fi
-		params="${params}ramdisk_size=65536 install=$insturl$autoyast"
+		bootparams="${bootparams}ramdisk_size=65536 install=$insturl$autoyast$ipparams$vncssh"
 	fi
-	dialog "${bgt[@]}" --inputbox "Following parameters will be used" $h $w "$params"  2> $TMPFILE || die
+}
+
+bootparamdialog()
+{
+	makebootparams
+	dialog "${bgt[@]}" --inputbox "Following parameters will be used for installation.\nSee http://en.opensuse.org/Linuxrc for help" $h $w "$bootparams"  2> $TMPFILE || die
 	read bootparams < $TMPFILE
 }
 
@@ -692,6 +749,64 @@ autodetecttypedialog()
 	fi
 
 	dialog "${bgt[@]}" --menu "Choose Installation Source" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+
+	i=0
+	read i < $TMPFILE
+
+	eval ${cmds[$i]}
+
+	return 0;
+}
+
+advancedoptionsdialog()
+{
+	local i=0
+	local menu cmds
+	declare -a menustr
+	declare -a cmds
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="Continue"
+	cmds[$i]="return 0"
+	i=$((i+1))
+
+	if [ -z "$isfedora" ]; then
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="Specify IP manually"
+		cmds[$i]="return 2"
+		i=$((i+1))
+
+		if [ -n "$ipparams" ]; then
+			menu[$((i*2))]=$i
+			menu[$((i*2+1))]="Use DHCP"
+			cmds[$i]="return 3"
+			i=$((i+1))
+		fi
+
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="SSH installation"
+		cmds[$i]="return 4"
+		i=$((i+1))
+
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="VNC installation"
+		cmds[$i]="return 5"
+		i=$((i+1))
+	fi
+
+	if [ "$bootloader" = grub ]; then
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="Change grub partition [$grubpartition]"
+		cmds[$i]="return 6"
+		i=$((i+1))
+	fi
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="Edit command line and continue"
+	cmds[$i]="return 99"
+	i=$((i+1))
+
+	dialog "${bgt[@]}" --menu "Expert Options" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
 
 	i=0
 	read i < $TMPFILE
@@ -915,7 +1030,24 @@ vgadialog
 if [ -z "$grubpartition" ]; then
 	partitiondialog
 fi
-bootparamdialog
+
+advancedoptionsdialog
+ret="$?"
+while [ "$ret" != 0 ]; do
+	case "$ret" in
+		2) ipsettingsdialog ;;
+		3) ipparams='' ;;
+		4) sshdialog ;;
+		5) vncdialog ;;
+		6) partitiondialog ;;
+		99) bootparamdialog; break ;;
+		*) break ;;
+	esac
+	advancedoptionsdialog
+	ret="$?"
+done
+
+makebootparams
 
 clear
 
