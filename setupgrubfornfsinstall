@@ -65,6 +65,10 @@
 #             use /boot/install_$host_$dist_* instead of /boot/loader-*
 # 10.06.2008: only run kexec -l in kexec script
 # 12.06.2008: add 11.0
+# 13.06.2008: additional grub root partition detecion
+#             add fedora 9
+#             print url of file that's currently downloaded
+#             add advanced options dialog
 
 # by Ludwig Nussel <lnussel@suse.de>
 
