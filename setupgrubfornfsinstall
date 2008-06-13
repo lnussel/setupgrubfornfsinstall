@@ -935,7 +935,9 @@ $echo mkdir -p "$imagedir"
 # pop doesn't work, no idea why
 #[ "$readonlymode" != yes ] && push_removeonexit "$imagedir"
 
+echo "Kernel: $kernelurl ..."
 $echo $curl -f -o "$imagedir"/linux "$kernelurl"
+echo "Initrd: $initrdurl ..."
 $echo $curl -f -o "$imagedir"/initrd "$initrdurl"
 
 file_error_ask_continue()
@@ -969,6 +971,7 @@ if [ "$readonlymode" != yes ]; then
 
 	if [ "$readonlymode" != "yes" -a -n "$splash" ]; then
 		splash="${kernelurl%/*}/$splash"
+		echo "Splash: $splash ..."
 		if $echo $curl -f -o "$imagedir"/splash "$splash"; then
 			case "`file $imagedir/splash`" in
 				*data*) ;;
