@@ -531,8 +531,8 @@ partitiondialog()
 		dialog "${bgt[@]}" --inputbox "grub partition, e.g. hd0,5" $h $w $grubpartition 2> $TMPFILE || die
 		read grubpartition < $TMPFILE
 		if [ -n "$grubpartition" ]; then
-			[ ${grubpartition:0-1:1} -eq ')' ] || grubpartition="$grubpartition)"
-			[ ${grubpartition:0:1} -eq '(' ] || grubpartition="($grubpartition"
+			[ ${grubpartition:0-1:1} = ')' ] || grubpartition="$grubpartition)"
+			[ ${grubpartition:0:1} = '(' ] || grubpartition="($grubpartition"
 		fi
 	fi
 }
