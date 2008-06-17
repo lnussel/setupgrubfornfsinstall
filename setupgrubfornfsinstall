@@ -120,8 +120,9 @@ is64bit=
 readonlymode=
 qemu=
 qemu_disk=
+qemu_disk_size="4096"
 qemu_mem=
-qemu_params=
+qemu_params="-no-reboot"
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
@@ -166,6 +167,14 @@ while [ "$#" -gt 0 ]; do
 				shift
 			else
 				qemu='qemu'
+			fi
+		;;
+		--qemu-disk)
+			if [ -n "$arg" -a "$arg" = "${arg#-}" ]; then
+				qemu_disk="$arg"
+				shift
+			else
+				die "--qemu-disk requires an argument"
 			fi
 		;;
 		--help|-h) helpandquit ;;
@@ -586,8 +595,6 @@ mediatypedialog()
 
 partitiondialog()
 {
-	[ -z "$qemu" ] || return
-
 	if [ "$bootloader" = grub ]; then
 		dialog "${bgt[@]}" --inputbox "grub partition, e.g. hd0,5" $h $w $grubpartition 2> $TMPFILE || die
 		read grubpartition < $TMPFILE
@@ -734,7 +741,7 @@ makebootparams()
 	fi
 
 	if [ -n "$qemu" ]; then
-		params="${params}clock=pit "
+		bootparams="${bootparams} clock=pit "
 	fi
 }
 
@@ -821,6 +828,87 @@ autodetecttypedialog()
 	return 0;
 }
 
+qemu_detect_defaults()
+{
+	if [ -z "$qemu_mem" ]; then
+		qemu_mem=(`stat -f -c "%f %S" /dev/shm/`)
+		qemu_mem=$((qemu_mem[0]*qemu_mem[1]/3*2/1024/1024))
+	fi
+
+
+	if [ -z "$qemu_disk" ]; then
+		for i in "${qemu_image_dirs[@]}"; do
+			if [ -e "$i/$dist.img" ]; then
+				qemu_disk="$i/$dist.img"
+				break;
+			fi
+		done
+	fi
+
+	if [ -z "$qemu_disk" ]; then
+		for i in "${qemu_image_dirs[@]}"; do
+			if [ -w "$i" ]; then
+				qemu_disk="$i/$dist.img"
+				break;
+			fi
+		done
+	fi
+}
+
+qemu_disk_dialog()
+{
+	while true; do
+		dialog "${bgt[@]}" --inputbox "QEMU disk image" $h $w "$qemu_disk" 2> $TMPFILE || die
+		read qemu_disk < $TMPFILE
+
+		if [ -z "$qemu_disk" ]; then
+			dialog "${bgt[@]}" --msgbox "no disk image specified" $h $w
+			continue
+		fi
+
+		if [ -e "$qemu_disk" -a ! -w "$qemu_disk" ]; then
+			dialog "${bgt[@]}" --msgbox "$qemu_disk is not writeable" $h $w
+			continue
+		fi
+
+		if [ ! -e "$qemu_disk" ]; then
+			dialog "${bgt[@]}" --inputbox "QEMU disk size in MB" $h $w $qemu_disk_size 2> $TMPFILE || die
+			read qemu_disk_size < $TMPFILE
+			if [ -z "$qemu_disk_size" -o "$qemu_disk_size" -lt "100" ]; then
+				dialog "${bgt[@]}" --msgbox "'$qemu_disk_size' too small" $h $w
+				continue
+			fi
+		fi
+		break
+	done
+}
+
+qemu_ram_dialog()
+{
+	dialog "${bgt[@]}" --inputbox "qemu RAM in MB" $h $w $qemu_mem 2> $TMPFILE || return
+	read qemu_mem < $TMPFILE
+}
+
+qemu_options_dialog()
+{
+	dialog "${bgt[@]}" --inputbox "Additional qemu options" $h $w "$qemu_params"  2> $TMPFILE || return
+	read qemu_params < $TMPFILE
+}
+
+qemu_prepare_disk()
+{
+	[ -n "$qemu" ] || return
+
+	[ ! -e "$qemu_disk" ] || return
+
+	> "$qemu_disk" || die
+	dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
+	if [ -x "$parted" ]; then
+		"$parted" -s "$qemu_disk" mklabel msdos
+		"$parted" -s "$qemu_disk" mkpart primary linux-swap 0 100MB
+	fi
+}
+
 advancedoptionsdialog()
 {
 	local i=0
@@ -861,6 +949,23 @@ advancedoptionsdialog()
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="Change grub partition [$grubpartition]"
 		cmds[$i]="return 6"
+		i=$((i+1))
+	fi
+
+	if [ -n "$qemu" ]; then
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="qemu memory [${qemu_mem}MB]"
+		cmds[$i]="return 7"
+		i=$((i+1))
+
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="qemu disk image [$qemu_disk]"
+		cmds[$i]="return 8"
+		i=$((i+1))
+
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="qemu options [$qemu_params]"
+		cmds[$i]="return 9"
 		i=$((i+1))
 	fi
 
@@ -1086,6 +1191,15 @@ case "$?" in
 esac
 
 if [ -n "$qemu" ]; then
+	if [ "$kernelurl" = "${kernelurl#file://}" ]; then
+		dialog "${bgt[@]}" --msgbox "Kernel URL ist not of type 'file://'" $h $w
+		die
+	fi
+	if [ "$initrdurl" = "${initrdurl#file://}" ]; then
+		dialog "${bgt[@]}" --msgbox "Initrd URL ist not of type 'file://'" $h $w
+		die
+	fi
+
 	if [ -z "$localinstpath" ]; then
 		if [ -n "$insturl" -a "$insturl" != "${insturl#file://}" ]; then
 			localinstpath="${insturl#file://}"
@@ -1102,7 +1216,9 @@ if [ -z "$kernelurl" -o -z "$initrdurl" ]; then
 	die
 fi
 vgadialog
-if [ -z "$grubpartition" ]; then
+if [ -n "$qemu" ]; then
+	qemu_detect_defaults
+elif [ -z "$grubpartition" ]; then
 	partitiondialog
 fi
 
@@ -1115,6 +1231,9 @@ while [ "$ret" != 0 ]; do
 		4) sshdialog ;;
 		5) vncdialog ;;
 		6) partitiondialog ;;
+		7) qemu_ram_dialog ;;
+		8) qemu_disk_dialog ;;
+		9) qemu_options_dialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
@@ -1183,77 +1302,8 @@ fetch_kernel()
 	fi
 }
 
+
 if [ -n "$qemu" ]; then
-	if [ "$kernelurl" = "${kernelurl#file://}" ]; then
-		dialog "${bgt[@]}" --msgbox "Kernel URL ist not of type 'file://'" $h $w
-		die
-	fi
-	if [ "$initrdurl" = "${initrdurl#file://}" ]; then
-		dialog "${bgt[@]}" --msgbox "Initrd URL ist not of type 'file://'" $h $w
-		die
-	fi
-
-	if [ -z "$qemu_mem" ]; then
-		qemu_mem=(`stat -f -c "%f %S" /dev/shm/`)
-		qemu_mem=$((qemu_mem[0]*qemu_mem[1]/3*2/1024/1024))
-	fi
-
-	dialog "${bgt[@]}" --inputbox "qemu RAM in MB" $h $w $qemu_mem 2> $TMPFILE || die
-	read qemu_mem < $TMPFILE
-
-	dialog "${bgt[@]}" --inputbox "Additional qemu options" $h $w "$qemu_params"  2> $TMPFILE || die
-	read qemu_params < $TMPFILE
-
-	if [ -z "$qemu_disk" ]; then
-		for i in "${qemu_image_dirs[@]}"; do
-			if [ -e "$i/$dist.img" ]; then
-				qemu_disk="$i/$dist.img"
-				break;
-			fi
-		done
-	fi
-
-	if [ -z "$qemu_disk" ]; then
-		for i in "${qemu_image_dirs[@]}"; do
-			if [ -w "$i" ]; then
-				qemu_disk="$i/$dist.img"
-				break;
-			fi
-		done
-	fi
-
-	while true; do
-		dialog "${bgt[@]}" --inputbox "QEMU disk image" $h $w "$qemu_disk" 2> $TMPFILE || die
-		read qemu_disk < $TMPFILE
-
-		if [ -z "$qemu_disk" ]; then
-			dialog "${bgt[@]}" --msgbox "no disk image specified" $h $w
-			continue
-		fi
-
-		if [ -e "$qemu_disk" -a ! -w "$qemu_disk" ]; then
-			dialog "${bgt[@]}" --msgbox "$qemu_disk is not writeable" $h $w
-			continue
-		fi
-
-		if [ ! -e "$qemu_disk" ]; then
-			qemu_disk_size="4096"
-			dialog "${bgt[@]}" --inputbox "QEMU disk size in MB" $h $w $qemu_disk_size 2> $TMPFILE || die
-			read qemu_disk_size < $TMPFILE
-
-			clear
-			> "$qemu_disk" || die
-			dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
-			if [ -x "$parted" ]; then
-				"$parted" -s "$qemu_disk" mklabel msdos
-				"$parted" -s "$qemu_disk" mkpart primary linux-swap 0 100MB
-			fi
-			break
-		else
-			clear
-			break
-		fi
-	done
 
 	#doesn't make sense as long as we can't install from remote locations anyways
 	#kernellocal=$qemu_disk.kernel
@@ -1263,6 +1313,8 @@ if [ -n "$qemu" ]; then
 	initrdlocal="${initrdurl#file://}"
 
 	clear
+
+	qemu_prepare_disk
 
 	set -- $qemu -kernel "$kernellocal" -initrd $initrdlocal -smb ${localinstpath%/*} -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
 	shellquote "$@"
