@@ -255,7 +255,9 @@ vga=
 splash=
 bootparams=
 kernelurl=
+kernellocal=
 initrdurl=
+initrdlocal=
 insturl=
 host=
 basepath=
@@ -280,27 +282,27 @@ if [ -z "$qemu" ]; then
 		readonlymode=yes
 	fi
 
-case "$bootloader" in
-	lilo)
-		bootloaderconf=/etc/lilo.conf
-		;;
-	grub)
-		bootloaderconf=/boot/grub/menu.lst
-		grubpartition=`awk '/^root/ {print $2;exit}' < /etc/grub.conf`
-		# 11.0 doesn't write root statement to grub.conf anymore
-		if [ -z "$grubpartition" ]; then
-			 grubpartition=`awk '$1 == "gfxmenu" {if(match($2, /\((hd[[:digit:]]+,[[:digit:]]+)\)/,arr)) { print arr[0];exit}}' < /boot/grub/menu.lst`
-		fi
-		;;
-esac
-fi
+	case "$bootloader" in
+		lilo)
+			bootloaderconf=/etc/lilo.conf
+			;;
+		grub)
+			bootloaderconf=/boot/grub/menu.lst
+			grubpartition=`awk '/^root/ {print $2;exit}' < /etc/grub.conf`
+			# 11.0 doesn't write root statement to grub.conf anymore
+			if [ -z "$grubpartition" ]; then
+				 grubpartition=`awk '$1 == "gfxmenu" {if(match($2, /\((hd[[:digit:]]+,[[:digit:]]+)\)/,arr)) { print arr[0];exit}}' < /boot/grub/menu.lst`
+			fi
+			;;
+	esac
 
-if [ -n "$qemu" ]; then
-	reqcmd qemu
+	if [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
+		dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable, read only mode" $h $w || die
+		readonlymode=yes
+	fi
+else # qemu mode
+	reqcmd $qemu
 	reqcmd smbd
-elif [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
-	dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable, read only mode" $h $w || die
-	readonlymode=yes
 fi
 
 if [ "$readonlymode" = "yes" ]; then
@@ -584,6 +586,8 @@ mediatypedialog()
 
 partitiondialog()
 {
+	[ -z "$qemu" ] || return
+
 	if [ "$bootloader" = grub ]; then
 		dialog "${bgt[@]}" --inputbox "grub partition, e.g. hd0,5" $h $w $grubpartition 2> $TMPFILE || die
 		read grubpartition < $TMPFILE
@@ -853,7 +857,7 @@ advancedoptionsdialog()
 		i=$((i+1))
 	fi
 
-	if [ "$bootloader" = grub ]; then
+	if [ "$bootloader" = grub -a -z "$qemu" ]; then
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="Change grub partition [$grubpartition]"
 		cmds[$i]="return 6"
@@ -1120,7 +1124,64 @@ done
 
 makebootparams
 
-clear
+file_error_ask_continue()
+{
+	local file="$1"
+	error "downloaded file $file is not a linux initrd"
+	xxd "$initrdlocal" | head
+	read -p "--- press enter to contine..."
+	dialog "${bgt[@]}" --yesno "downloaded file $file is not a linux initrd. Continue anyways?" $h $w || die
+}
+
+fetch_kernel()
+{
+	echo "Kernel: $kernelurl ..."
+	$echo $curl -f -o "$kernellocal" "$kernelurl"
+	echo "Initrd: $initrdurl ..."
+	$echo $curl -f -o "$initrdlocal" "$initrdurl"
+
+	if [ "$readonlymode" != yes ]; then
+		case "`file $kernellocal`" in
+			*Linux*[Kk]ernel*) ;;
+			*)
+				file_error_ask_continue "$kernellocal"
+			;;
+		esac
+
+		case "`file $inirdlocal`" in
+			*gzip\ compressed\ data*initrd*) ;;
+			*gzip\ compressed\ data*)
+				if [ -z "$isfedora" ]; then
+					file_error_ask_continue "$inirdlocal"
+				fi
+			;;
+			*)
+				file_error_ask_continue "$inirdlocal"
+			;;
+		esac
+
+		if [ "$readonlymode" != "yes" -a -n "$splash" ]; then
+			splash="${kernelurl%/*}/$splash"
+			echo "Splash: $splash ..."
+			if $echo $curl -f -o "$inirdlocal.splash" "$splash"; then
+				case "`file $initrdlocal.splash`" in
+					*data*) ;;
+					*)
+						warning "downloaded file $initrdlocal.splash doesn't look like a splash screen";
+						rm -f "$initrdlocal.splash"
+					;;
+				esac
+
+				if [ -f "$initrdlocal.splash" ]; then
+					cat "$initrdlocal.splash" >> "$inirdlocal"
+					rm -f "$initrdlocal.splash"
+				fi
+			else
+				echo "no splash support"
+			fi
+		fi
+	fi
+}
 
 if [ -n "$qemu" ]; then
 	if [ "$kernelurl" = "${kernelurl#file://}" ]; then
@@ -1181,7 +1242,7 @@ if [ -n "$qemu" ]; then
 			read qemu_disk_size < $TMPFILE
 
 			clear
-			mktemp "$qemu_disk" || die
+			> "$qemu_disk" || die
 			dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
 			if [ -x "$parted" ]; then
 				"$parted" -s "$qemu_disk" mklabel msdos
@@ -1194,124 +1255,86 @@ if [ -n "$qemu" ]; then
 		fi
 	done
 
-	set -- $qemu -kernel "${kernelurl#file://}" -initrd "${initrdurl#file://}" -smb ${localinstpath%/*} -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
+	#doesn't make sense as long as we can't install from remote locations anyways
+	#kernellocal=$qemu_disk.kernel
+	#initrdlocal=$qemu_disk.initrd
+	#fetch_kernel
+	kernellocal="${kernelurl#file://}"
+	initrdlocal="${initrdurl#file://}"
+
+	clear
+
+	set -- $qemu -kernel "$kernellocal" -initrd $initrdlocal -smb ${localinstpath%/*} -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
 	shellquote "$@"
 	echo
 	"$@"
 	stat="$?"
 	echo "run with $qemu -hda $qemu_disk -m $qemu_mem $qemu_params"
 	exit $stat
-fi
 
-set -e
+else # regular setup with bootloader
 
-imagedir="$imagedir/install_${host//[^a-zA-Z0-9.\-]/_}_${dist//[^a-zA-Z0-9.\-]/_}"
-if [ "$readonlymode" != yes ]; then
-	imagedir=`mktemp -d -q $imagedir-XXXXXX`
-	if [ $? -ne 0 ]; then
-		dialog "${bgt[@]}" --msgbox "Can't create directory in /boot" $h $w
-		die
+	set -e
+
+	clear
+
+	imagedir="$imagedir/install_${host//[^a-zA-Z0-9.\-]/_}_${dist//[^a-zA-Z0-9.\-]/_}"
+	if [ "$readonlymode" != yes ]; then
+		imagedir=`mktemp -d -q $imagedir-XXXXXX`
+		if [ $? -ne 0 ]; then
+			dialog "${bgt[@]}" --msgbox "Can't create directory in /boot" $h $w
+			die
+		fi
+		echo "Copying files..."
 	fi
-	echo "Copying files..."
-fi
 
-$echo mkdir -p "$imagedir"
 # pop doesn't work, no idea why
 #[ "$readonlymode" != yes ] && push_removeonexit "$imagedir"
 
-echo "Kernel: $kernelurl ..."
-$echo $curl -f -o "$imagedir"/linux "$kernelurl"
-echo "Initrd: $initrdurl ..."
-$echo $curl -f -o "$imagedir"/initrd "$initrdurl"
+	$echo mkdir -p "$imagedir"
+	initrdlocal="$imagedir/initrd"
+	kernellocal="$imagedir/linux"
 
-file_error_ask_continue()
-{
-	local file="$1"
-	error "downloaded file $file is not a linux initrd"
-	xxd "$imagedir/initrd" | head
-	read -p "--- press enter to contine..."
-	dialog "${bgt[@]}" --yesno "downloaded file $file is not a linux initrd. Continue anyways?" $h $w || die
-}
-
-if [ "$readonlymode" != yes ]; then
-	case "`file $imagedir/linux`" in
-		*Linux*[Kk]ernel*) ;;
-		*)
-			file_error_ask_continue "$imagedir/linux"
-		;;
-	esac
-
-	case "`file $imagedir/initrd`" in
-		*gzip\ compressed\ data*initrd*) ;;
-		*gzip\ compressed\ data*)
-			if [ -z "$isfedora" ]; then
-				file_error_ask_continue "$imagedir/initrd"
-			fi
-		;;
-		*)
-			file_error_ask_continue "$imagedir/initrd"
-		;;
-	esac
-
-	if [ "$readonlymode" != "yes" -a -n "$splash" ]; then
-		splash="${kernelurl%/*}/$splash"
-		echo "Splash: $splash ..."
-		if $echo $curl -f -o "$imagedir"/splash "$splash"; then
-			case "`file $imagedir/splash`" in
-				*data*) ;;
-				*)
-					warning "downloaded file $imagedir/splash doesn't look like a splash screen";
-					rm -f "$imagedir/splash"
-				;;
-			esac
-
-			if [ -f "$imagedir"/splash ]; then
-				cat "$imagedir"/splash >> "$imagedir"/initrd
-				rm -f "$imagedir"/splash
-			fi
-		else
-			echo "no splash support"
-		fi
-	fi
-fi
+	fetch_kernel
 
 #[ "$readonlymode" != yes ] && pop_removeonexit
 
-[ "$readonlymode" = yes ] && echo -e "\nAppend the following entry to your bootloader config:"
+	[ "$readonlymode" = yes ] && echo -e "\nAppend the following entry to your bootloader config:"
 
-case "$bootloader" in
-	lilo)
-		lilo_label="inst_$host"
-		n=1
-		while grep -q "label = $lilo_label\$" /etc/lilo.conf; do
-			lilo_label="inst_${host}_$n"
-			n=$((n+1))
-		done
-		echo "" >> $bootloaderconf
-		echo "image = $imagedir/linux" >> $bootloaderconf
-		echo "	label = $lilo_label" >> $bootloaderconf
-		echo "	vga = 791" >> $bootloaderconf
-		echo "	initrd = $imagedir/initrd" >> $bootloaderconf
-		echo "	append = \"$bootparams\"" >> $bootloaderconf
-		;;
-	grub)
-		echo "" >> $bootloaderconf
-		echo "title Installation $host/$dist" >> $bootloaderconf
-		echo "    kernel $grubpartition$imagedir/linux $bootparams" >> $bootloaderconf
-		echo "    initrd $grubpartition$imagedir/initrd" >> $bootloaderconf
-		;;
-esac
+	case "$bootloader" in
+		lilo)
+			lilo_label="inst_$host"
+			n=1
+			while grep -q "label = $lilo_label\$" /etc/lilo.conf; do
+				lilo_label="inst_${host}_$n"
+				n=$((n+1))
+			done
+			echo "" >> $bootloaderconf
+			echo "image = $kernellocal" >> $bootloaderconf
+			echo "	label = $lilo_label" >> $bootloaderconf
+			echo "	vga = 791" >> $bootloaderconf
+			echo "	initrd = $inirdlocal" >> $bootloaderconf
+			echo "	append = \"$bootparams\"" >> $bootloaderconf
+			;;
+		grub)
+			echo "" >> $bootloaderconf
+			echo "title Installation $host/$dist" >> $bootloaderconf
+			echo "    kernel $grubpartition$kernellocal $bootparams" >> $bootloaderconf
+			echo "    initrd $grubpartition$inirdlocal" >> $bootloaderconf
+			;;
+	esac
 
-if [ "$readonlymode" != yes ]; then
-	cat <<-EOF > $imagedir/kexec
-		#!/bin/sh
-		exec kexec -l --reset-vga --command-line="$bootparams" --initrd="$imagedir/initrd" -x $imagedir/linux
-	EOF
-	chmod 755 $imagedir/kexec
-	echo "kexec script generated as $imagedir/kexec"
+	if [ "$readonlymode" != yes ]; then
+		cat <<-EOF > $imagedir/kexec
+			#!/bin/sh
+			exec kexec -l --reset-vga --command-line="$bootparams" --initrd="$inirdlocal" -x $kernellocal
+		EOF
+		chmod 755 $imagedir/kexec
+		echo "kexec script generated as $imagedir/kexec"
 
-	if [ "$bootloader" = "lilo" ]; then
-		dialog "${bgt[@]}" --msgbox "You need to run 'lilo' before rebooting" $h $w || die
+		if [ "$bootloader" = "lilo" ]; then
+			dialog "${bgt[@]}" --msgbox "You need to run 'lilo' before rebooting" $h $w || die
+		fi
+		echo "Done"
 	fi
-	echo "Done"
 fi
