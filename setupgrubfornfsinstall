@@ -106,11 +106,11 @@ reqcmd file
 shellquote()
 {
     for arg; do
+        arg=${arg/\\/\\\\}
         arg=${arg/\$/\\\$}
         arg=${arg/\"/\\\"}
         arg=${arg/\`/\\\`}
-        arg=${arg/\\/\\\\}
-        echo -n " \"$arg\""
+        echo -n "\"$arg\" "
     done 
 }
 
