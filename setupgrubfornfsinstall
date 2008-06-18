@@ -171,6 +171,7 @@ OPTIONS:
 	--32		install i386 version even when run from an x86_64 install
 	--readonly	don't actually write files
 	--qemu[=binary]	use qemu
+	--qemu-disk=[file]  specify disk image for use with qemu
 EOF
 	exit 0
 }
@@ -336,7 +337,7 @@ if [ -z "$qemu" ]; then
 	esac
 
 	if [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
-		dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable, read only mode" $h $w || die
+		dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable!\nrunning in read only demo mode." $h $w || die
 		readonlymode=yes
 	fi
 else # qemu mode
@@ -358,6 +359,9 @@ if [ "$readonlymode" = "yes" ]; then
 	echo=echo
 	bgt[1]="${bgt[1]} (dry-run)"
 else
+	if [ -n "$qemu" ]; then
+		bgt[1]="${bgt[1]} ($qemu)"
+	fi
 	curl="$curl --progress-bar"
 fi
 
@@ -943,11 +947,11 @@ qemu_prepare_disk()
 
 	[ ! -e "$qemu_disk" ] || return
 
-	> "$qemu_disk" || die
-	dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
+	[ "$readonlymode" = yes ] || > "$qemu_disk" || die
+	$echo dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
 	if [ -x "$parted" ]; then
-		"$parted" -s "$qemu_disk" mklabel msdos
-		"$parted" -s "$qemu_disk" mkpart primary linux-swap 0 100MB
+		$echo "$parted" -s "$qemu_disk" mklabel msdos
+		$echo "$parted" -s "$qemu_disk" mkpart primary linux-swap 0 100MB
 	fi
 }
 
@@ -1347,6 +1351,9 @@ fetch_kernel()
 }
 
 
+echo
+echo
+
 if [ -n "$qemu" ]; then
 
 	kernellocal="$qemu_disk.install.kernel"
@@ -1357,25 +1364,33 @@ if [ -n "$qemu" ]; then
 	qemu_prepare_disk
 
 	set -- $qemu -hda "$qemu_disk" -m $qemu_mem $qemu_params
-	script="$qemu_disk.run"
+	if [ "$readonlymode" = yes ]; then
+		script="/dev/stdout"
+		install_script="/dev/stdout"
+	else
+		script="$qemu_disk.run"
+		install_script="$qemu_disk.install.run"
+	fi
 	echo -ne '#!/bin/sh\nexec ' > "$script"
 	shellquote "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
-	chmod 755 "$script"
 	set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
-	install_script="$qemu_disk.install.run"
 	echo -ne '#!/bin/sh\nexec ' > "$install_script"
 	shellquote "$@" >> "$install_script"
 	echo ' "$@"'  >> "$install_script"
-	chmod 755 "$install_script"
-	echo "running '$install_script'"
-	"$install_script"
-	stat="$?"
-	if [ "$?" -ne 0 ]; then
-		echo "installation failed"
+	if [ "$readonlymode" != yes ]; then
+		chmod 755 "$script"
+		chmod 755 "$install_script"
+
+		echo "running '$install_script'"
+		$echo "$install_script"
+		stat="$?"
+		if [ "$?" -ne 0 ]; then
+			echo "installation failed"
+		fi
+		echo "run '$script' to start the installed system"
+		exit $stat
 	fi
-	echo "run '$script' to start the installed system"
-	exit $stat
 
 else # regular setup with bootloader
 
