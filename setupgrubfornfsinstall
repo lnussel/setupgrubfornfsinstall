@@ -113,15 +113,34 @@ reqcmd dialog
 reqcmd curl
 reqcmd file
 
+shellquote_one()
+{
+	local arg
+        arg=${1//\\/\\\\}
+        arg=${arg//\$/\\\$}
+        arg=${arg//\"/\\\"}
+        arg=${arg//\`/\\\`}
+	echo -n "\"$arg\""
+}
+
 shellquote()
 {
-    for arg; do
-        arg=${arg/\\/\\\\}
-        arg=${arg/\$/\\\$}
-        arg=${arg/\"/\\\"}
-        arg=${arg/\`/\\\`}
-        echo -n "\"$arg\" "
-    done 
+	local arg
+	shellquote_one "$1"
+	shift
+	for arg; do
+		echo -n ' '
+		shellquote_one "$arg"
+	done 
+}
+
+shellfriendly()
+{
+	local arg
+	arg="${1//[^a-zA-Z0-9.\-]/_}"
+	arg="${arg//__/_}"
+	arg="${arg%%_}"
+	echo -n "$arg"
 }
 
 curl=curl
