@@ -176,7 +176,7 @@ while [ "$#" -gt 0 ]; do
 				qemu="$arg"
 				shift
 			else
-				qemu='qemu'
+				qemu=1
 			fi
 		;;
 		--qemu-disk)
@@ -320,7 +320,16 @@ if [ -z "$qemu" ]; then
 		readonlymode=yes
 	fi
 else # qemu mode
-	reqcmd $qemu
+	if [ "$qemu" != 1 ]; then
+		reqcmd $qemu
+	else
+		if reqcmd -t qemu-kvm; then
+			qemu=qemu-kvm
+		else
+			reqcmd qemu
+			qemu=qemu
+		fi
+	fi
 	reqcmd smbd
 fi
 
