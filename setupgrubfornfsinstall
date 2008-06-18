@@ -1,6 +1,6 @@
 #!/bin/bash
 # Dialog based wizard to create a suitable entry in the lilo or grub config
-# Copyright (C) 2004-2007 SUSE Linux Products GmbH, Nuernberg, Germany.
+# Copyright (C) 2004-2008 SUSE Linux Products GmbH, Nuernberg, Germany.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -57,7 +57,7 @@
 # 14.06.2007: smarter arch detection so the (any arch) menu entries are not required anymore
 # 24.07.2007: print error if serverlist is missing instead of silently not offering autofs
 #             add option to install script locally
-# 01.08.2007: add support for qemu
+# 01.08.2007: initial support for qemu
 # 02.08.2007: grep for autofs in /proc/mounts instead of automount
 # 04.10.2007: support download.opensuse.org
 # 30.11.2007: add another special case for sles9
@@ -70,6 +70,7 @@
 #             add fedora 9
 #             print url of file that's currently downloaded
 #             add advanced options dialog
+# 18.06.2008: enhanced qemu support and added kvm support
 
 # by Ludwig Nussel <lnussel@suse.de>
 
@@ -601,8 +602,9 @@ mediatypedialog()
 		dialog "${bgt[@]}" --menu "Choose Media Type" $h $w $mh 0 FTP 1 NFS 2 SLP 2> $TMPFILE || die
 		read ret < $TMPFILE
 	else
-		ret=3
+		ret=0
 	fi
+
 	case "$ret" in
 		0)
 			resolveordie "$host"
@@ -802,7 +804,7 @@ autodetecttypedialog()
 
 	which "slptool" > /dev/null 2>&1 || haveslptool=0
 
-	if [ -z "$qemu" -a "$haveslptool" = 1 ]; then
+	if [ "$haveslptool" = 1 ]; then
 		msg="SLP scan"
 		if [ -e /proc/net/ip_tables_names ]; then
 			if iptables -vnL INPUT 2>/dev/null | grep -c DROP &>/dev/null; then
@@ -876,9 +878,11 @@ qemu_detect_defaults()
 
 	if [ -z "$qemu_disk" ]; then
 		for i in "${qemu_image_dirs[@]}"; do
-			if [ -e "$i/$dist.img" ]; then
-				qemu_disk="$i/$dist.img"
+			qemu_disk="$i/"`shellfriendly "$dist"`.img
+			if [ -e "$qemu_disk" ]; then
 				break;
+			else
+				qemu_disk=
 			fi
 		done
 	fi
@@ -886,7 +890,7 @@ qemu_detect_defaults()
 	if [ -z "$qemu_disk" ]; then
 		for i in "${qemu_image_dirs[@]}"; do
 			if [ -w "$i" ]; then
-				qemu_disk="$i/$dist.img"
+				qemu_disk="$i/"`shellfriendly "$dist"`.img
 				break;
 			fi
 		done
@@ -972,15 +976,17 @@ advancedoptionsdialog()
 			i=$((i+1))
 		fi
 
-		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="SSH installation"
-		cmds[$i]="return 4"
-		i=$((i+1))
+		if [ -z "$qemu" ]; then
+			menu[$((i*2))]=$i
+			menu[$((i*2+1))]="SSH installation"
+			cmds[$i]="return 4"
+			i=$((i+1))
 
-		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="VNC installation"
-		cmds[$i]="return 5"
-		i=$((i+1))
+			menu[$((i*2))]=$i
+			menu[$((i*2+1))]="VNC installation"
+			cmds[$i]="return 5"
+			i=$((i+1))
+		fi
 	fi
 
 	if [ "$bootloader" = grub -a -z "$qemu" ]; then
@@ -1228,7 +1234,7 @@ case "$?" in
 		;;
 esac
 
-if [ -n "$qemu" ]; then
+if [ 0 = 1 ]; then
 	if [ "$kernelurl" = "${kernelurl#file://}" ]; then
 		dialog "${bgt[@]}" --msgbox "Kernel URL ist not of type 'file://'" $h $w
 		die
@@ -1298,30 +1304,30 @@ fetch_kernel()
 	$echo $curl -f -o "$initrdlocal" "$initrdurl"
 
 	if [ "$readonlymode" != yes ]; then
-		case "`file $kernellocal`" in
+		case `file "$kernellocal"` in
 			*Linux*[Kk]ernel*) ;;
 			*)
 				file_error_ask_continue "$kernellocal"
 			;;
 		esac
 
-		case "`file $inirdlocal`" in
+		case `file "$initrdlocal"` in
 			*gzip\ compressed\ data*initrd*) ;;
 			*gzip\ compressed\ data*)
 				if [ -z "$isfedora" ]; then
-					file_error_ask_continue "$inirdlocal"
+					file_error_ask_continue "$initrdlocal"
 				fi
 			;;
 			*)
-				file_error_ask_continue "$inirdlocal"
+				file_error_ask_continue "$initrdlocal"
 			;;
 		esac
 
 		if [ "$readonlymode" != "yes" -a -n "$splash" ]; then
 			splash="${kernelurl%/*}/$splash"
 			echo "Splash: $splash ..."
-			if $echo $curl -f -o "$inirdlocal.splash" "$splash"; then
-				case "`file $initrdlocal.splash`" in
+			if $echo $curl -f -o "$initrdlocal.splash" "$splash"; then
+				case `file "$initrdlocal".splash` in
 					*data*) ;;
 					*)
 						warning "downloaded file $initrdlocal.splash doesn't look like a splash screen";
@@ -1330,7 +1336,7 @@ fetch_kernel()
 				esac
 
 				if [ -f "$initrdlocal.splash" ]; then
-					cat "$initrdlocal.splash" >> "$inirdlocal"
+					cat "$initrdlocal.splash" >> "$initrdlocal"
 					rm -f "$initrdlocal.splash"
 				fi
 			else
@@ -1343,32 +1349,39 @@ fetch_kernel()
 
 if [ -n "$qemu" ]; then
 
-	#doesn't make sense as long as we can't install from remote locations anyways
-	#kernellocal=$qemu_disk.kernel
-	#initrdlocal=$qemu_disk.initrd
-	#fetch_kernel
-	kernellocal="${kernelurl#file://}"
-	initrdlocal="${initrdurl#file://}"
+	kernellocal="$qemu_disk.install.kernel"
+	initrdlocal="$qemu_disk.install.initrd"
 
-	clear
+	fetch_kernel
 
 	qemu_prepare_disk
 
-	set -- $qemu -kernel "$kernellocal" -initrd $initrdlocal -smb ${localinstpath%/*} -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
-	shellquote "$@"
-	echo
-	"$@"
+	set -- $qemu -hda "$qemu_disk" -m $qemu_mem $qemu_params
+	script="$qemu_disk.run"
+	echo -ne '#!/bin/sh\nexec ' > "$script"
+	shellquote "$@" >> "$script"
+	echo >> "$script"
+	chmod 755 "$script"
+	set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
+	install_script="$qemu_disk.install.run"
+	echo -ne '#!/bin/sh\nexec ' > "$install_script"
+	shellquote "$@" >> "$install_script"
+	echo >> "$install_script"
+	chmod 755 "$install_script"
+	echo "running '$install_script'"
+	"$install_script"
 	stat="$?"
-	echo "run with $qemu -hda $qemu_disk -m $qemu_mem $qemu_params"
+	if [ "$?" -ne 0 ]; then
+		echo "installation failed"
+	fi
+	echo "run '$script' to start the installed system"
 	exit $stat
 
 else # regular setup with bootloader
 
 	set -e
 
-	clear
-
-	imagedir="$imagedir/install_${host//[^a-zA-Z0-9.\-]/_}_${dist//[^a-zA-Z0-9.\-]/_}"
+	imagedir="$imagedir/install_${host//[^a-zA-Z0-9.\-]/_}_"`shellfriendly "$dist"`
 	if [ "$readonlymode" != yes ]; then
 		imagedir=`mktemp -d -q $imagedir-XXXXXX`
 		if [ $? -ne 0 ]; then
@@ -1403,21 +1416,21 @@ else # regular setup with bootloader
 			echo "image = $kernellocal" >> $bootloaderconf
 			echo "	label = $lilo_label" >> $bootloaderconf
 			echo "	vga = 791" >> $bootloaderconf
-			echo "	initrd = $inirdlocal" >> $bootloaderconf
+			echo "	initrd = $initrdlocal" >> $bootloaderconf
 			echo "	append = \"$bootparams\"" >> $bootloaderconf
 			;;
 		grub)
 			echo "" >> $bootloaderconf
 			echo "title Installation $host/$dist" >> $bootloaderconf
 			echo "    kernel $grubpartition$kernellocal $bootparams" >> $bootloaderconf
-			echo "    initrd $grubpartition$inirdlocal" >> $bootloaderconf
+			echo "    initrd $grubpartition$initrdlocal" >> $bootloaderconf
 			;;
 	esac
 
 	if [ "$readonlymode" != yes ]; then
 		cat <<-EOF > $imagedir/kexec
 			#!/bin/sh
-			exec kexec -l --reset-vga --command-line="$bootparams" --initrd="$inirdlocal" -x $kernellocal
+			exec kexec -l --reset-vga --command-line="$bootparams" --initrd="$initrdlocal" -x $kernellocal
 		EOF
 		chmod 755 $imagedir/kexec
 		echo "kexec script generated as $imagedir/kexec"
