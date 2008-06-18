@@ -93,10 +93,20 @@ error()
 
 reqcmd()
 {
-	if ! which "$1" > /dev/null 2>&1; then
-		 echo "The command \"$1\" is needed for this script" >&2
-		 exit 1
+	local try=
+	if [ "$1" = '-t' ]; then
+		try=1
+		shift
 	fi
+	if ! which "$1" > /dev/null 2>&1; then
+		if [ -z "$try" ]; then
+			echo "The command \"$1\" is needed for this script" >&2
+			exit 1
+		else
+			return 1
+		fi
+	fi
+	return 0
 }
 
 reqcmd dialog
