@@ -152,7 +152,7 @@ qemu=
 qemu_disk=
 qemu_disk_size="4096"
 qemu_mem=
-qemu_params="-no-reboot"
+qemu_params=
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
@@ -874,6 +874,10 @@ autodetecttypedialog()
 
 qemu_detect_defaults()
 {
+	if [ -z "$qemu_params" ]; then
+		local mac=`printf "52:54:00:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256))`
+		qemu_params="-no-reboot -net nic,macaddr=$mac -net user"
+	fi
 	if [ -z "$qemu_mem" ]; then
 		qemu_mem=(`stat -f -c "%f %S" /dev/shm/`)
 		qemu_mem=$((qemu_mem[0]*qemu_mem[1]/3*2/1024/1024))
