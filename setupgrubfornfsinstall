@@ -1307,9 +1307,9 @@ file_error_ask_continue()
 fetch_kernel()
 {
 	echo "Kernel: $kernelurl ..."
-	$echo $curl -f -o "$kernellocal" "$kernelurl"
+	$echo $curl -f -o "$kernellocal" "$kernelurl" || die
 	echo "Initrd: $initrdurl ..."
-	$echo $curl -f -o "$initrdlocal" "$initrdurl"
+	$echo $curl -f -o "$initrdlocal" "$initrdurl" || die
 
 	if [ "$readonlymode" != yes ]; then
 		case `file "$kernellocal"` in
