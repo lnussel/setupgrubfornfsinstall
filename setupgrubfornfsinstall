@@ -156,6 +156,7 @@ qemu_params=
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
+verify_signatures=
 
 helpandquit()
 {
@@ -294,6 +295,7 @@ serverlist="$program.serverlist"
 vga=
 splash=
 bootparams=
+baseurl=
 kernelurl=
 kernellocal=
 initrdurl=
@@ -635,6 +637,7 @@ mediatypedialog()
 	fi
 	kernelurl=file://$localinstpath$kernelpath/linux$suffix
 	initrdurl=file://$localinstpath$kernelpath/initrd$suffix
+	baseurl=file://$localinstpath
 }
 
 partitiondialog()
@@ -1071,6 +1074,7 @@ kernelurl_from_insturl()
 	fi
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
 	dist=`url2txt "$insturl"`
+	baseurl="$insturl"
 
 	return 0
 }
@@ -1083,6 +1087,7 @@ kernelurl_from_insturl_fedora()
 
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
 	dist=`url2txt "$insturl"`
+	baseurl="$insturl"
 
 	return 0
 }
@@ -1230,12 +1235,15 @@ case "$?" in
 		;;
 	2)
 		opensuse_org_dialog
+		verify_signatures=1
 		;;
 	3)
 		fedora_dialog
+		verify_signatures=1
 		;;
 	98)
 		manualurldialog
+		verify_signatures=1
 		;;
 	99)
 		localinstall
@@ -1293,6 +1301,16 @@ while [ "$ret" != 0 ]; do
 	ret="$?"
 done
 
+if [ -n "$verify_signatures" ]; then
+	if [ ! -r /usr/lib/rpm/gnupg/pubring.gpg ]; then
+		dialog "${bgt[@]}" --msgbox "/usr/lib/rpm/gnupg/pubring.gpg is not installed. Signature check disabled." $h $w || die
+		verify_signatures=
+	elif ! reqcmd -t gpgv; then
+		dialog "${bgt[@]}" --msgbox "gpgv is not available. Signature check disabled." $h $w || die
+		verify_signatures=
+	fi
+fi
+
 makebootparams
 
 file_error_ask_continue()
@@ -1302,6 +1320,30 @@ file_error_ask_continue()
 	xxd "$initrdlocal" | head
 	read -p "--- press enter to contine..."
 	dialog "${bgt[@]}" --yesno "downloaded file $file is not a linux initrd. Continue anyways?" $h $w || die
+}
+
+skip_empty=
+compare_sha1sum()
+{
+	local contentfile="$1"
+	local file="$2"
+	local havesha1="$3"
+	local s
+
+	while [ "${file:0:1}" = '/' ]; do
+		file="${file:1}"
+	done
+
+	s=`awk -v f="$file" '$1 == "HASH" && $2 == "SHA1" && $4 == f { print $3 }' <  "$contentfile"`
+
+	if [ -z "$s" ]; then
+		if [ -z "$skip_empty" ]; then
+			dialog "${bgt[@]}" $defaultno --yesno "No check sum available for $file. Can't verify integrity. Continue anyways?" $h $w || die
+			skip_empty=1
+		fi
+	elif [ "$s" != "$havesha1" ]; then
+		dialog "${bgt[@]}" $defaultno --yesno "Check sum of $file is corrupt. Continue anyways?" $h $w || die
+	fi
 }
 
 fetch_kernel()
@@ -1331,7 +1373,7 @@ fetch_kernel()
 			;;
 		esac
 
-		if [ "$readonlymode" != "yes" -a -n "$splash" ]; then
+		if [ -n "$splash" ]; then
 			splash="${kernelurl%/*}/$splash"
 			echo "Splash: $splash ..."
 			if $echo $curl -f -o "$initrdlocal.splash" "$splash"; then
@@ -1342,14 +1384,46 @@ fetch_kernel()
 						rm -f "$initrdlocal.splash"
 					;;
 				esac
-
-				if [ -f "$initrdlocal.splash" ]; then
-					cat "$initrdlocal.splash" >> "$initrdlocal"
-					rm -f "$initrdlocal.splash"
-				fi
 			else
 				echo "no splash support"
 			fi
+		fi
+
+		local s1 s1 s3 dummy
+		read s1 dummy < <(sha1sum "$kernellocal" 2>/dev/null)
+		read s2 dummy < <(sha1sum "$initrdlocal" 2>/dev/null)
+		if [ -n "$splash" -a -f "$initrdlocal.splash" ]; then
+			read s3 dummy < <(sha1sum "$initrdlocal.splash" 2>/dev/null)
+		fi
+
+		if [ -n "$verify_signatures" ]; then
+			push_removeonexit "$kernellocal.content"
+			push_removeonexit "$kernellocal.content.asc"
+			if [ -n "$s1" -a -n "$s2" ] \
+				&& curlprobe "$baseurl/content" && curlprobe "$baseurl/content.asc" \
+				&& curl -s -f -o "$kernellocal.content" "$baseurl/content" \
+				&& curl -s -f -o "$kernellocal.content.asc" "$baseurl/content.asc"; then
+				local gpgmsg=`gpgv -q --keyring=/usr/lib/rpm/gnupg/pubring.gpg "$kernellocal.content.asc" "$kernellocal.content" 2>&1`
+				if [ "$?" -eq 0 ]; then
+					compare_sha1sum "$kernellocal.content" "${kernelurl#$baseurl}" "$s1"
+					compare_sha1sum "$kernellocal.content" "${initrdurl#$baseurl}" "$s2"
+					if [ -n "$splash" ]; then
+						compare_sha1sum "$kernellocal.content" "${splash#$baseurl}" "$s3"
+					fi
+				else
+					if [ -n "$gpgmsg" ]; then
+						gpgmsg=":\n$gpgmsg\n"
+					fi
+					dialog "${bgt[@]}" $defaultno --yesno "gpg signature check for the content file failed$gpgmsg\nContinue anyways?" $h $w || die
+				fi
+			else
+				dialog "${bgt[@]}" --msgbox "Warning: The installation source does not provide a signed content file. Can't verify integrity of the downloaded files." $h $w || die
+			fi
+		fi
+
+		if [ -n "$splash" -a -f "$initrdlocal.splash" ]; then
+			cat "$initrdlocal.splash" >> "$initrdlocal"
+			rm -f "$initrdlocal.splash"
 		fi
 	fi
 }
