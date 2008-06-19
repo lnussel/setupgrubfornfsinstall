@@ -71,6 +71,8 @@
 #             print url of file that's currently downloaded
 #             add advanced options dialog
 # 18.06.2008: enhanced qemu support and added kvm support
+# 19.06.2008: signature verification of downloaded files
+#             generate random mac addresses for qemu installations
 
 # by Ludwig Nussel <lnussel@suse.de>
 
