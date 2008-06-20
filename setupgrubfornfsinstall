@@ -398,6 +398,8 @@ fi
 
 
 # probe whether given url exists
+# XXX: doesn't set return value properly with older curl, e.g. on
+# 9.2. Use ranges instead?
 curlprobe()
 {
 	local url="$1"
@@ -1069,10 +1071,11 @@ kernelurl_from_insturl()
 	else
 		kernelurl="$insturl/boot/loader/linux"
 		initrdurl="$insturl/boot/loader/initrd"
-	fi
-	if [ "$is64bit" = '1' ] && curlprobe "$kernelurl"64; then
-		kernelurl="$kernelurl"64
-		initrdurl="$initrdurl"64
+		# method used on 9.1 - 10.0
+		if [ "$is64bit" = '1' ] && curlprobe "$kernelurl"64; then
+			kernelurl="$kernelurl"64
+			initrdurl="$initrdurl"64
+		fi
 	fi
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
 	dist=`url2txt "$insturl"`
