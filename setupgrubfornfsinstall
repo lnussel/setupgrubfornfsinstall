@@ -355,7 +355,6 @@ else # qemu mode
 			qemu=qemu
 		fi
 	fi
-	reqcmd smbd
 fi
 
 if [ "$readonlymode" = "yes" ]; then
@@ -960,10 +959,6 @@ qemu_prepare_disk()
 
 	[ "$readonlymode" = yes ] || > "$qemu_disk" || die
 	$echo dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
-	if [ -x "$parted" ]; then
-		$echo "$parted" -s "$qemu_disk" mklabel msdos
-		$echo "$parted" -s "$qemu_disk" mkpart primary linux-swap 0 100MB
-	fi
 }
 
 advancedoptionsdialog()
