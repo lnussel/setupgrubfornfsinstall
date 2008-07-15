@@ -73,6 +73,7 @@
 # 18.06.2008: enhanced qemu support and added kvm support
 # 19.06.2008: signature verification of downloaded files
 #             generate random mac addresses for qemu installations
+# 15.07.2008: make curl follow redirects
 
 # by Ludwig Nussel <lnussel@suse.de>
 
@@ -146,7 +147,7 @@ shellfriendly()
 	echo -n "$arg"
 }
 
-curl=curl
+curl="curl -L"
 greparch=1
 is64bit=
 readonlymode=
