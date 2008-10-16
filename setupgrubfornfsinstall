@@ -883,7 +883,7 @@ qemu_detect_defaults()
 {
 	if [ -z "$qemu_params" ]; then
 		local mac=`printf "52:54:00:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256))`
-		qemu_params="-no-reboot -net nic,macaddr=$mac -net user -usb -usbdevice tablet"
+		qemu_params="-no-reboot -net nic,macaddr=$mac,model=pcnet -net user -usb -usbdevice tablet"
 	fi
 	if [ -z "$qemu_mem" ]; then
 		qemu_mem=(`stat -f -c "%f %S" /dev/shm/`)
