@@ -969,7 +969,7 @@ advancedoptionsdialog()
 {
 	local i=0
 	local menu cmds
-	declare -a menustr
+	declare -a menu
 	declare -a cmds
 
 	menu[$((i*2))]=$i
