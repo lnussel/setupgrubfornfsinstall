@@ -1185,6 +1185,7 @@ fedora_dialog()
 	local retry=2
 	declare -a urls
 	declare -a menu
+	local mirror
 
 	while read url name; do
 		urls[${#urls[@]}]="$url"
@@ -1193,15 +1194,22 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	http://download.fedora.redhat.com/pub/fedora/linux/releases/9/Fedora Fedora 9
-	http://download.fedora.redhat.com/pub/fedora/linux/releases/8/Fedora Fedora 8
-	http://download.fedora.redhat.com/pub/fedora/linux/releases/7/Fedora Fedora 7
+	/releases/10/Fedora Fedora 10
+	/releases/9/Fedora Fedora 9
+	/releases/8/Fedora Fedora 8
+	/releases/7/Fedora Fedora 7
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
 	i=0
 	read i < $TMPFILE
 	insturl=${urls[$i]}
+
+	dialog "${bgt[@]}" --inputbox "Coose a mirror.\nsee http://mirrors.fedoraproject.org/publiclist/Fedora/" $h $w \
+		"http://download.fedora.redhat.com/pub/fedora/linux/" 2> $TMPFILE || die
+	read mirror < $TMPFILE
+
+	insturl="$mirror$insturl"
 
 	kernelurl_from_insturl_fedora
 	dist=${menu[$((i*2+1))]}
