@@ -1162,6 +1162,7 @@ opensuse_org_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	http://download.opensuse.org/distribution/11.1/repo/oss/ 11.1
 	http://download.opensuse.org/distribution/11.0/repo/oss/ 11.0
 	http://download.opensuse.org/distribution/10.3/repo/oss/ 10.3
 	http://download.opensuse.org/distribution/10.2/repo/oss/ 10.2
