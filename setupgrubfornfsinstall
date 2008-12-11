@@ -76,6 +76,8 @@
 # 15.07.2008: make curl follow redirects
 # 20.10.2008: add mouse as usb tablet for qemu
 #             use pcnet as default network card for qemu. better performance it seems
+#
+# ... now in git: http://git.opensuse.org/?p=people/lnussel/setupgrubfornfsinstall.git;a=summary
 
 
 # by Ludwig Nussel <lnussel@suse.de>
