@@ -1447,6 +1447,72 @@ fetch_kernel()
 echo
 echo
 
+create_libvirt_xml()
+{
+	local nettype=''
+	local netmodel=''
+	local macaddr=''
+	while [ -n "$1" ]; do
+		param="$1"
+		arg="$2"
+		shift
+		case "$param" in
+			-net)
+			if [ ${arg#nic} != "$arg" ]; then
+				macaddr=${arg##*macaddr=}
+				macaddr=${macaddr%%,*}
+				netmodel=${arg##*model=}
+				netmodel=${netmodel%%,*}
+				shift
+			elif [ "$arg" = 'user' -o "$arg" = 'none' ]; then
+				nettype="$arg"
+				shift
+			fi
+			;;
+		esac
+	done
+
+	: ${netmodel:=rtl8139}
+
+	cat <<EOF
+<domain type='kvm'>
+  <name>$dist</name>
+  <memory>$((qemu_mem*1024))</memory>
+  <vcpu>1</vcpu>
+  <os>
+    <type arch='${arch/i386/i686}' machine='pc'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+  </features>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>destroy</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/bin/qemu-kvm</emulator>
+    <disk type='file' device='disk'>
+      <source file='$qemu_disk'/>
+      <target dev='hda' bus='ide'/>
+    </disk>
+EOF
+if [ "$nettype" = 'user' ]; then
+	cat <<EOF
+    <interface type='user'>
+      <mac address='$macaddr'/>
+      <model type='$netmodel'/>
+    </interface>
+EOF
+fi
+	cat <<EOF
+    <input type='tablet' bus='usb'/>
+    <graphics type='vnc' port='-1' autoport='yes' listen='127.0.0.1'/>
+  </devices>
+</domain>
+EOF
+}
+
 if [ -n "$qemu" ]; then
 
 	kernellocal="$qemu_disk.install.kernel"
@@ -1460,10 +1526,13 @@ if [ -n "$qemu" ]; then
 	if [ "$readonlymode" = yes ]; then
 		script="/dev/stdout"
 		install_script="/dev/stdout"
+		libvirt_file="/dev/stdout"
 	else
 		script="$qemu_disk.run"
 		install_script="$qemu_disk.install.run"
+		libvirt_file="$qemu_disk".xml
 	fi
+	create_libvirt_xml $qemu_params > $libvirt_file
 	echo -ne '#!/bin/sh\nexec ' > "$script"
 	shellquote "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
