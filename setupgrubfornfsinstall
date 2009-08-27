@@ -1197,6 +1197,7 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/11/Fedora Fedora 11
 	/releases/10/Fedora Fedora 10
 	/releases/9/Fedora Fedora 9
 	/releases/8/Fedora Fedora 8
