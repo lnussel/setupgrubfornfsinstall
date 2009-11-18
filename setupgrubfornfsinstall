@@ -1170,11 +1170,9 @@ opensuse_org_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	http://download.opensuse.org/distribution/11.2/repo/oss/ 11.2
 	http://download.opensuse.org/distribution/11.1/repo/oss/ 11.1
 	http://download.opensuse.org/distribution/11.0/repo/oss/ 11.0
-	http://download.opensuse.org/distribution/10.3/repo/oss/ 10.3
-	http://download.opensuse.org/distribution/10.2/repo/oss/ 10.2
-	http://download.opensuse.org/distribution/SL-10.1/inst-source/ 10.1
 	http://download.opensuse.org/distribution/SL-OSS-factory/inst-source/ Factory
 	EOF
 
@@ -1205,6 +1203,7 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/12/Fedora Fedora 12
 	/releases/11/Fedora Fedora 11
 	/releases/10/Fedora Fedora 10
 	/releases/9/Fedora Fedora 9
