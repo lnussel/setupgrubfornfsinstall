@@ -317,6 +317,9 @@ client_ip=
 client_gateway=
 client_netmask=
 client_nameserver=
+client_domain=
+client_netdevice=
+ifaces=()
 
 vncssh=
 
@@ -691,19 +694,115 @@ autoyastdialog()
 	fi
 }
 
+detect_ip()
+{
+	local line
+	local nameservers=()
+	local prefer_if
+
+	if [ -z "$client_nameserver" ]; then
+		set -- `sed -ne '/^nameserver/s/.* //p' < /etc/resolv.conf`
+		nameservers=("$@")
+		IFS=, eval client_nameserver='"$*"'
+	fi
+	if [ -z "$client_domain" ]; then
+		set -- `sed -ne '/^search /s/search *//p' < /etc/resolv.conf`
+		client_domain="$1"
+	fi
+	if [ -z "$client_gateway" ]; then
+		local ns
+		for ns in "${nameservers[@]}" 1.2.3.4; do
+			line=`ip -o r g "$ns"`
+			set -- $line
+			while [ "$#" -gt 0 ]; do
+				if [ "$1" = "via" ]; then
+					client_gateway="$2"
+					shift
+				fi
+				if [ "$1" = "dev" ]; then
+					prefer_if="$2"
+					shift
+				fi
+				shift
+			done
+			[ -z "$client_gateway" ] || break
+		done
+	fi
+
+	ip -o a s > $TMPFILE
+	while read line; do
+		set -- $line
+		iface="${2%:}"
+		[ "$iface" != lo ] || continue
+		shift 2
+		mac=
+		ip=
+		while [ "$#" -gt 0 ]; do
+			if [ "$1" = "link/ether" ]; then
+				mac="$2"
+				eval iface_${iface}_mac=\"\$mac\"
+				break
+			fi
+			if [ "$1" = "inet" ]; then
+				eval ip=\"\$iface_${iface}_ip\"
+				if [ -z "$ip" ]; then
+					ip="$2"
+					eval iface_${iface}_ip=\"\$ip\"
+				fi
+				break
+			fi
+			shift
+		done
+		if [ -n "$ip" -o -n "$mac" ]; then
+			ifaces+=($iface)
+		fi
+	done < $TMPFILE
+
+	if [ -z "$client_ip" ]; then
+		if [ -n "$prefer_if" ]; then
+			for iface in "${ifaces[@]}"; do
+				[ "$iface" = "$prefer_if" ] || continue
+				eval client_ip=\"\$iface_${iface}_ip\"
+				eval client_netdevice=\"\$iface_${iface}_mac\"
+				break
+			done
+		fi
+
+		if [ -z "$client_ip" ]; then
+			for iface in "${ifaces[@]}"; do
+				eval client_ip=\"\$iface_${iface}_ip\"
+				eval client_netdevice=\"\$iface_${iface}_mac\"
+				if [ -n "$client_ip" ]; then
+					break
+				fi
+			done
+		fi
+	fi
+}
+
 ipsettingsdialog()
 {
+	detect_ip
+
 	if dialog "${bgt[@]}" --inputbox "IP Address/maskbits" $h $w "$client_ip" 2> $TMPFILE; then
 		read client_ip < $TMPFILE
 		if [ -n "$client_ip" ]; then
 			if [ "$client_ip" = ${client_ip%%/*} ] && dialog "${bgt[@]}" --inputbox "Netmask" $h $w "$client_netmask" 2> $TMPFILE; then
 				read client_netmask < $TMPFILE
 			fi
+			if [ "${#ifaces[@]}" -gt 1 ]; then
+				if dialog "${bgt[@]}" --inputbox "Interface MAC Address" $h $w "$client_netdevice" 2> $TMPFILE; then
+					read client_netdevice < $TMPFILE
+				fi
+			fi
 			if dialog "${bgt[@]}" --inputbox "Gateway" $h $w "$client_gateway" 2> $TMPFILE; then
 				read client_gateway < $TMPFILE
 			fi
 			if dialog "${bgt[@]}" --inputbox "Nameserver" $h $w "$client_nameserver" 2> $TMPFILE; then
 				read client_nameserver < $TMPFILE
+			fi
+			if dialog "${bgt[@]}" --inputbox "DNS Search Domain" $h $w "$client_domain" 2> $TMPFILE; then
+				read client_domain < $TMPFILE
 			fi
 		else
 			client_ip=
@@ -799,6 +898,8 @@ makebootparams()
 			[ -z "$client_netmask" ] || ipparams="$ipparams netmask=$client_netmask"
 			[ -z "$client_gateway" ] || ipparams="$ipparams gateway=$client_gateway"
 			[ -z "$client_nameserver" ] || ipparams="$ipparams nameserver=$client_nameserver"
+			[ -z "$client_domain" ] || ipparams="$ipparams domain=$client_domain"
+			[ -z "$client_netdevice" ] || ipparams="$ipparams netdevice=$client_netdevice"
 		fi
 
 		bootparams="${bootparams}ramdisk_size=65536 install=$insturl$autoyast$ipparams$vncssh"
