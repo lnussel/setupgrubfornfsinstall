@@ -312,7 +312,12 @@ insturl=
 host=
 basepath=
 isfedora=
-ipparams=
+use_fixed_ip=
+client_ip=
+client_gateway=
+client_netmask=
+client_nameserver=
+
 vncssh=
 
 if [ -z "$qemu" ]; then
@@ -688,21 +693,16 @@ autoyastdialog()
 
 ipsettingsdialog()
 {
-	local client_ip=
-	local client_gateway=
-	local client_netmask=
-	local client_nameserver=
-
-	if dialog "${bgt[@]}" --inputbox "IP Address/maskbits" $h $w 2> $TMPFILE; then
+	if dialog "${bgt[@]}" --inputbox "IP Address/maskbits" $h $w "$client_ip" 2> $TMPFILE; then
 		read client_ip < $TMPFILE
 		if [ -n "$client_ip" ]; then
-			if [ "$client_ip" = ${client_ip%%/*} ] && dialog "${bgt[@]}" --inputbox "Netmask" $h $w 2> $TMPFILE; then
+			if [ "$client_ip" = ${client_ip%%/*} ] && dialog "${bgt[@]}" --inputbox "Netmask" $h $w "$client_netmask" 2> $TMPFILE; then
 				read client_netmask < $TMPFILE
 			fi
-			if dialog "${bgt[@]}" --inputbox "Gateway" $h $w 2> $TMPFILE; then
+			if dialog "${bgt[@]}" --inputbox "Gateway" $h $w "$client_gateway" 2> $TMPFILE; then
 				read client_gateway < $TMPFILE
 			fi
-			if dialog "${bgt[@]}" --inputbox "Nameserver" $h $w 2> $TMPFILE; then
+			if dialog "${bgt[@]}" --inputbox "Nameserver" $h $w "$client_nameserver" 2> $TMPFILE; then
 				read client_nameserver < $TMPFILE
 			fi
 		else
@@ -711,12 +711,12 @@ ipsettingsdialog()
 	else
 		client_ip=
 	fi
-	if [ -n "$client_ip" -a -n "$client_netmask" ]; then
-		ipparams=" hostip=$client_ip netmask=$client_netmask"
-		[ -z "$client_gateway" ] || ipparams="$ipparams gateway=$client_gateway"
-		[ -z "$client_nameserver" ] || ipparams="$ipparams nameserver=$client_nameserver"
-	else
+
+	if [ -z "$client_ip" ]; then
 		dialog "${bgt[@]}" --msgbox "No valid IP entered, using DHCP" $h $w
+		use_fixed_ip=
+	else
+		use_fixed_ip=1
 	fi
 }
 
@@ -793,6 +793,14 @@ makebootparams()
 		if [ "$bootloader" != "lilo" ]; then
 			bootparams="$vga "
 		fi
+		local ipparams=''
+		if [ -n "$use_fixed_ip" ]; then
+			ipparams=" hostip=$client_ip"
+			[ -z "$client_netmask" ] || ipparams="$ipparams netmask=$client_netmask"
+			[ -z "$client_gateway" ] || ipparams="$ipparams gateway=$client_gateway"
+			[ -z "$client_nameserver" ] || ipparams="$ipparams nameserver=$client_nameserver"
+		fi
+
 		bootparams="${bootparams}ramdisk_size=65536 install=$insturl$autoyast$ipparams$vncssh"
 	fi
 
@@ -985,7 +993,7 @@ advancedoptionsdialog()
 		cmds[$i]="return 2"
 		i=$((i+1))
 
-		if [ -n "$ipparams" ]; then
+		if [ -n "$use_fixed_ip" ]; then
 			menu[$((i*2))]=$i
 			menu[$((i*2+1))]="Use DHCP"
 			cmds[$i]="return 3"
@@ -1303,7 +1311,7 @@ ret="$?"
 while [ "$ret" != 0 ]; do
 	case "$ret" in
 		2) ipsettingsdialog ;;
-		3) ipparams='' ;;
+		3) use_fixed_ip='' ;;
 		4) sshdialog ;;
 		5) vncdialog ;;
 		6) partitiondialog ;;
