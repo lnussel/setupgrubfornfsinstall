@@ -1424,8 +1424,8 @@ fetch_kernel()
 			push_removeonexit "$kernellocal.content.asc"
 			if [ -n "$s1" -a -n "$s2" ] \
 				&& curlprobe "$baseurl/content" && curlprobe "$baseurl/content.asc" \
-				&& curl -s -f -o "$kernellocal.content" "$baseurl/content" \
-				&& curl -s -f -o "$kernellocal.content.asc" "$baseurl/content.asc"; then
+				&& $curl -s -f -o "$kernellocal.content" "$baseurl/content" \
+				&& $curl -s -f -o "$kernellocal.content.asc" "$baseurl/content.asc"; then
 				local gpgmsg=`gpgv -q --keyring=/usr/lib/rpm/gnupg/pubring.gpg "$kernellocal.content.asc" "$kernellocal.content" 2>&1`
 				if [ "$?" -eq 0 ]; then
 					compare_sha1sum "$kernellocal.content" "${kernelurl#$baseurl}" "$s1"
