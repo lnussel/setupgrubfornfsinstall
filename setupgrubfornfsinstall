@@ -312,6 +312,7 @@ insturl=
 host=
 basepath=
 isfedora=
+ismandriva=
 use_fixed_ip=
 client_ip=
 client_gateway=
@@ -854,7 +855,10 @@ vgadialog()
 	declare -a vgaparams
 	declare -a descrs
 	if [ -n "$isfedora" ]; then
-		vgaparams=("graphical resolution=1024x768" "text" "graphical resolution=640x480" "graphical resolution=800x600" "graphical resolution=1280x1024" "")
+		vgaparams=("graphical resolution=1024x768" "text" "graphical resolution=640x480" \
+			"graphical resolution=800x600" "graphical resolution=1280x1024" "")
+	elif [ -n "$ismandriva" ]; then
+		vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
 	else
 		vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
 	fi
@@ -871,7 +875,7 @@ vgadialog()
 	i=0
 	read i < $TMPFILE
 	vga=${vgaparams[$i]}
-	if [ -z "$isfedora" ]; then
+	if [ -z "$isfedora" -a -z "$ismandriva" ]; then
 		splash=${descrs[$i]}
 		case "$splash" in
 			*[0-9]x[0-9]*)
@@ -888,6 +892,12 @@ makebootparams()
 
 	if [ -n "$isfedora" ]; then
 		bootparams="$vga method=$insturl"
+	elif [ -n "$ismandriva" ]; then
+		local method=${insturl%%://*}
+		local server=${insturl#*://}
+		local dir=/${server#*/}
+		server=${server%%/*}
+		bootparams="$vga automatic=method:$method,network:dhcp,server:$server,directory:$dir"
 	else
 		if [ "$bootloader" != "lilo" ]; then
 			bootparams="$vga "
@@ -969,6 +979,11 @@ autodetecttypedialog()
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="fedora.redhat.com"
 	cmds[$i]="greparch=0; isfedora=1; return 3"
+	i=$((i+1))
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="Mandriva"
+	cmds[$i]="greparch=0; ismandriva=1; return 4"
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
@@ -1088,7 +1103,7 @@ advancedoptionsdialog()
 	cmds[$i]="return 0"
 	i=$((i+1))
 
-	if [ -z "$isfedora" ]; then
+	if [ -z "$isfedora" -a -z "$ismandriva" ]; then
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="Specify IP manually"
 		cmds[$i]="return 2"
@@ -1187,6 +1202,19 @@ kernelurl_from_insturl()
 			initrdurl="$initrdurl"64
 		fi
 	fi
+	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
+	dist=`url2txt "$insturl"`
+	baseurl="$insturl"
+
+	return 0
+}
+
+kernelurl_from_insturl_mandriva()
+{
+	insturl=$insturl/$arch
+	kernelurl=$insturl/isolinux/alt0/vmlinuz
+	initrdurl=$insturl/isolinux/alt0/all.rdz
+
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
 	dist=`url2txt "$insturl"`
 	baseurl="$insturl"
@@ -1327,6 +1355,45 @@ fedora_dialog()
 	dist=${menu[$((i*2+1))]}
 }
 
+mandriva_dialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+	local mirror
+
+	while read url name; do
+		urls+=("$url")
+		menu+=($i "$name")
+		i=$((i+1))
+#FIXME: move to external file
+	done <<-EOF
+	2010.0 Mandriva 2010.0
+	2009.1 Mandriva 2009.1
+	EOF
+
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	mandriva_version=${urls[$i]}
+
+# TODO: http://wiki.mandriva.com/en/Mirrors_API
+# http://api.mandriva.com/mirrors/basic.$mandriva_version.$arch.list
+	dialog "${bgt[@]}" --inputbox "Coose a mirror.\nsee http://api.mandriva.com/mirrors/list.php" $h $w \
+		"ftp://ftp5.gwdg.de/pub/linux/mandriva/mandrivalinux/official/$mandriva_version" 2> $TMPFILE || die
+	read mirror < $TMPFILE
+
+	insturl="$mirror"
+
+	kernelurl_from_insturl_mandriva
+	dist=${menu[$((i*2+1))]}
+}
+
+
 manualurldialog()
 {
 	dialog "${bgt[@]}" --inputbox "Please enter the full URL to the first installation CD" $h $w "" 2> $TMPFILE || die
@@ -1363,7 +1430,11 @@ case "$?" in
 		;;
 	3)
 		fedora_dialog
-		verify_signatures=1
+		verify_signatures=
+		;;
+	4)
+		mandriva_dialog
+		verify_signatures=
 		;;
 	98)
 		manualurldialog
@@ -1488,7 +1559,7 @@ fetch_kernel()
 		case `file "$initrdlocal"` in
 			*gzip\ compressed\ data*initrd*) ;;
 			*gzip\ compressed\ data*)
-				if [ -z "$isfedora" ]; then
+				if [ -z "$isfedora" -a -z "$ismandriva" ]; then
 					file_error_ask_continue "$initrdlocal"
 				fi
 			;;
