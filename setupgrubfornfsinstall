@@ -158,6 +158,7 @@ is64bit=
 readonlymode=
 qemu=
 qemu_disk=
+qemu_disk_set=
 qemu_disk_size="6144"
 qemu_mem=
 qemu_params=
@@ -212,6 +213,7 @@ while [ "$#" -gt 0 ]; do
 		--qemu-disk)
 			if [ -n "$arg" -a "$arg" = "${arg#-}" ]; then
 				qemu_disk="$arg"
+				qemu_dist_set=1
 				shift
 			else
 				die "--qemu-disk requires an argument"
@@ -449,6 +451,9 @@ askhost()
 	declare -a descrs
 
 while read rh rp rd; do
+	case "$rh" in
+		\#*) continue ;;
+	esac
 	hosts[${#hosts[@]}]="$rh"
 	hostpaths[${#hostpaths[@]}]="$rp"
 	descrs[${#descrs[@]}]="$rd"
@@ -469,6 +474,7 @@ done < "$serverlist"
 	host=${hosts[$i]}
 	[ -z "$host" ] && die
 	basepath="/$host/${hostpaths[$i]}"
+	nicename="${descrs[$i]##*/}"
 	[ -z "$basepath" ] && die
 }
 
@@ -557,6 +563,17 @@ distrodialog()
 
 	read ret < $TMPFILE
 	dist=${distros[$ret]}
+	instpath=$basepath/$dist
+
+	# beautify
+	if [ -n "$nicename" ]; then
+		case "$dist" in
+			i386|x86[-_]64|ppc|s390|s390x|ppc64|ia64|FTP|DVD|inst-source)
+				dist="$nicename/$dist"
+			;;
+		esac
+	fi
+
 	return 0
 }
 
@@ -611,7 +628,6 @@ findkernel()
 mediatypedialog()
 {
 	kernelpath=
-	instpath=$basepath/$dist
 
 	if ! findkernel; then
 		dialog "${bgt[@]}" --msgbox "Invalid/Unsupported distribution (no kernel/initrd found)" $h $w
@@ -1008,6 +1024,14 @@ autodetecttypedialog()
 	return 0;
 }
 
+dist_name_dialog()
+{
+	dialog "${bgt[@]}" --inputbox "Displayed Name" $h $w "$dist" 2> $TMPFILE || return
+	read dist < $TMPFILE
+
+	[ -z "$qemu" ] || qemu_detect_defaults
+}
+
 qemu_detect_defaults()
 {
 	if [ -z "$qemu_params" ]; then
@@ -1020,7 +1044,7 @@ qemu_detect_defaults()
 	fi
 
 
-	if [ -z "$qemu_disk" ]; then
+	if [ -z "$qemu_disk_set" ]; then
 		for i in "${qemu_image_dirs[@]}"; do
 			qemu_disk="$i/"`shellfriendly "$dist"`.img
 			if [ -e "$qemu_disk" ]; then
@@ -1031,7 +1055,7 @@ qemu_detect_defaults()
 		done
 	fi
 
-	if [ -z "$qemu_disk" ]; then
+	if [ -z "$qemu_disk_set" ]; then
 		for i in "${qemu_image_dirs[@]}"; do
 			if [ -w "$i" ]; then
 				qemu_disk="$i/"`shellfriendly "$dist"`.img
@@ -1056,6 +1080,8 @@ qemu_disk_dialog()
 			dialog "${bgt[@]}" --msgbox "$qemu_disk is not writeable" $h $w
 			continue
 		fi
+
+		qemu_disk_set=1
 
 		if [ ! -e "$qemu_disk" ]; then
 			dialog "${bgt[@]}" --inputbox "QEMU disk size in MB" $h $w $qemu_disk_size 2> $TMPFILE || die
@@ -1098,10 +1124,15 @@ advancedoptionsdialog()
 	declare -a menu
 	declare -a cmds
 
-	menu[$((i*2))]=$i
-	menu[$((i*2+1))]="Continue"
+	menu=($i "Continue")
 	cmds[$i]="return 0"
 	i=$((i+1))
+
+	if [ -n "$qemu" ]; then
+		menu+=($i "Change Name [$dist]")
+		cmds[$i]="return 10"
+		i=$((i+1))
+	fi
 
 	if [ -z "$isfedora" -a -z "$ismandriva" ]; then
 		menu[$((i*2))]=$i
@@ -1143,7 +1174,7 @@ advancedoptionsdialog()
 		i=$((i+1))
 
 		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="qemu disk image [$qemu_disk]"
+		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB]"
 		cmds[$i]="return 8"
 		i=$((i+1))
 
@@ -1311,7 +1342,7 @@ opensuse_org_dialog()
 	insturl=${urls[$i]}
 
 	kernelurl_from_insturl
-	dist=${menu[$((i*2+1))]}
+	dist="openSUSE ${menu[$((i*2+1))]}"
 }
 
 fedora_dialog()
@@ -1489,6 +1520,7 @@ while [ "$ret" != 0 ]; do
 		7) qemu_ram_dialog ;;
 		8) qemu_disk_dialog ;;
 		9) qemu_options_dialog ;;
+		10) dist_name_dialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
