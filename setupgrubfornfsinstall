@@ -1674,7 +1674,11 @@ create_libvirt_xml()
 				macaddr=${arg##*macaddr=}
 				macaddr=${macaddr%%,*}
 				netmodel=${arg##*model=}
-				netmodel=${netmodel%%,*}
+				if [ "$arg" != "$netmodel" ]; then
+					netmodel=${netmodel%%,*}
+				else
+					netmodel=''
+				fi
 				shift
 			elif [ "$arg" = 'user' -o "$arg" = 'none' ]; then
 				nettype="$arg"
