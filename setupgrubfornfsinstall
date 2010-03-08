@@ -1749,6 +1749,8 @@ if [ -n "$qemu" ]; then
 		libvirt_file="$qemu_disk".xml
 	fi
 	create_libvirt_xml $qemu_params > $libvirt_file
+	echo "to import the image to libvirt run"
+	echo "virsh -c qemu:///system define $libvirt_file"
 	echo -ne '#!/bin/sh\nexec ' > "$script"
 	shellquote "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
