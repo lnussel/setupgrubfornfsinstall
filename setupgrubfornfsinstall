@@ -1316,24 +1316,23 @@ slpdialog()
 opensuse_org_dialog()
 {
 	local i=0
-	local menu
+	local menu=()
 	local urls
 	local url
 	local retry=2
 	declare -a urls
-	declare -a menu
 
 	while read url name; do
 		urls[${#urls[@]}]="$url"
-		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="$name"
+		menu+=($i "$name")
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
 	http://download.opensuse.org/distribution/11.2/repo/oss/ 11.2
 	http://download.opensuse.org/distribution/11.1/repo/oss/ 11.1
 	http://download.opensuse.org/distribution/11.0/repo/oss/ 11.0
-	http://download.opensuse.org/distribution/SL-OSS-factory/inst-source/ Factory
+	http://download.opensuse.org/factory-snapshot/repo/oss/ Factory (current Milestone)
+	http://download.opensuse.org/factory/repo/oss/ Factory
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
@@ -1342,7 +1341,18 @@ opensuse_org_dialog()
 	insturl=${urls[$i]}
 
 	kernelurl_from_insturl
-	dist="openSUSE ${menu[$((i*2+1))]}"
+	dist="${menu[$((i*2+1))]}"
+	case "$dist" in
+		*Milestone*)
+			dialog "${bgt[@]}" --infobox "Probing milestone version ..." $h $w
+			if $curl -f -s -o "$TMPFILE" "$insturl/README.BETA"; then
+				i=`sed -ne '/Distribution version/{s/.*version //;p}' $TMPFILE`
+				[ -z "$i" ] || dist="$i"
+			fi
+		;;
+		*Factory*) dist="openSUSE $dist `date +%Y-%m-%d`";;
+		*) dist="openSUSE $dist" ;;
+	esac
 }
 
 fedora_dialog()
