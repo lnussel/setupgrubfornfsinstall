@@ -160,6 +160,7 @@ qemu=
 qemu_disk=
 qemu_disk_set=
 qemu_disk_size="6144"
+qemu_disk_type=
 qemu_mem=
 qemu_params=
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
@@ -1053,15 +1054,19 @@ qemu_detect_defaults()
 				qemu_disk=
 			fi
 		done
-	fi
 
-	if [ -z "$qemu_disk_set" ]; then
 		for i in "${qemu_image_dirs[@]}"; do
 			if [ -w "$i" ]; then
 				qemu_disk="$i/"`shellfriendly "$dist"`.img
 				break;
 			fi
 		done
+
+		if reqcmd -t qemu-img; then
+			qemu_disk_type=qcow2
+		else
+			qemu_disk_type=raw
+		fi
 	fi
 }
 
@@ -1114,7 +1119,11 @@ qemu_prepare_disk()
 	[ ! -e "$qemu_disk" ] || return
 
 	[ "$readonlymode" = yes ] || > "$qemu_disk" || die
-	$echo dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
+	if [ "$qemu_disk_type" = 'raw' ]; then
+		$echo dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
+	else
+		$echo qemu-img create -f "$qemu_disk_type" "$qemu_disk" "$qemu_disk_size"M || die
+	fi
 }
 
 advancedoptionsdialog()
@@ -1174,7 +1183,7 @@ advancedoptionsdialog()
 		i=$((i+1))
 
 		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB]"
+		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB, ${qemu_disk_type}]"
 		cmds[$i]="return 8"
 		i=$((i+1))
 
