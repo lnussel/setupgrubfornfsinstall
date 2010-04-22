@@ -395,7 +395,7 @@ if [ -z "$is64bit" ]; then
 	case "`uname -m`" in
 		*64) is64bit=1 ;;
 		i?86)
-			if grep -q 'flags.*\<lm\>' /proc/cpuinfo; then
+			if [ -z "$qemu" ] && grep -q 'flags.*\<lm\>' /proc/cpuinfo; then
 				dialog "${bgt[@]}" --yesno "Install x86_64 version?" $h $w && {
 					is64bit=1
 					arch=x86_64
