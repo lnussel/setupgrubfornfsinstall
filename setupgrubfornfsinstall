@@ -159,8 +159,9 @@ readonlymode=
 qemu=
 qemu_disk=
 qemu_disk_set=
-qemu_disk_size="6144"
-qemu_disk_type=
+qemu_disk_size="10240"
+qemu_disk_type=raw
+have_qemu_img=
 qemu_mem=
 qemu_params=
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
@@ -1063,11 +1064,33 @@ qemu_detect_defaults()
 		done
 
 		if reqcmd -t qemu-img; then
-			qemu_disk_type=qcow2
+			have_qemu_img=1
 		else
-			qemu_disk_type=raw
+			have_qemu_img=
 		fi
 	fi
+}
+
+qemu_disk_format_dialog()
+{
+	local i=0
+	local menu
+	local formats
+	local format
+	declare -a urls
+	declare -a menu
+
+	formats=(`qemu-img --help| sed -ne '/^Supported formats:/{s/.*: //;p;q}'`)
+
+	for format in "${formats[@]}"; do
+		menu+=($i "$format")
+		i=$((i+1))
+	done
+
+	dialog "${bgt[@]}" --menu "Choose Format" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	qemu_disk_type=${formats[$i]}
 }
 
 qemu_disk_dialog()
@@ -1094,6 +1117,10 @@ qemu_disk_dialog()
 			if [ -z "$qemu_disk_size" -o "$qemu_disk_size" -lt "100" ]; then
 				dialog "${bgt[@]}" --msgbox "'$qemu_disk_size' too small" $h $w
 				continue
+			fi
+
+			if [ -n "$have_qemu_img" ]; then
+				qemu_disk_format_dialog
 			fi
 		fi
 		break
