@@ -164,6 +164,9 @@ qemu_disk_type=raw
 have_qemu_img=
 qemu_mem=
 qemu_params=
+qemu_net_nic_mac=
+qemu_net_nic_model=
+qemu_net_type=user
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
@@ -1036,10 +1039,13 @@ dist_name_dialog()
 
 qemu_detect_defaults()
 {
-	if [ -z "$qemu_params" ]; then
-		local mac=`printf "52:54:00:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256))`
-		qemu_params="-no-reboot -net nic,macaddr=$mac,model=pcnet -net user -usb -usbdevice tablet"
+	if [ -z "$qemu_net_nic_mac" ]; then
+		qemu_net_nic_mac=`printf "52:54:00:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256))`
 	fi
+	if [ -z "$qemu_params" ]; then
+		qemu_params="-no-reboot -usb -usbdevice tablet"
+	fi
+
 	if [ -z "$qemu_mem" ]; then
 		qemu_mem=(`stat -f -c "%f %S" /dev/shm/`)
 		qemu_mem=$((qemu_mem[0]*qemu_mem[1]/3*2/1024/1024))
@@ -1127,6 +1133,44 @@ qemu_disk_dialog()
 	done
 }
 
+# usage: variable headline items...
+generic_list_dialog()
+{
+	local i=0
+	local menu
+	local values
+	local value
+	declare -a urls
+	declare -a menu
+
+	local var="$1"
+	local headline="$2"
+	shift 2
+
+	values=("$@")
+
+	for value in "${values[@]}"; do
+		menu+=($i "$value")
+		i=$((i+1))
+	done
+
+	dialog "${bgt[@]}" --menu "$headline" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	eval "$var=\"\${values[\$i]}\""
+	eval "${var}_idx=\"\$i\""
+}
+
+qemu_net_dialog()
+{
+	generic_list_dialog 'qemu_net_nic_model' "Choose NIC Model" 'default' `$qemu -net nic,model='?' 2>&1 |sed -ne '/Supported NIC models:/{s/.*: //;s/,/ /g;p;q}'`
+	[ "$qemu_net_nic_model" != 'default' ] || qemu_net_nic_model=
+
+	dialog "${bgt[@]}" --inputbox "qemu network type" $h $w $qemu_net_type 2> $TMPFILE || return
+	read qemu_net_type < $TMPFILE
+	: ${qemu_net_type:=user}
+}
+
 qemu_ram_dialog()
 {
 	dialog "${bgt[@]}" --inputbox "qemu RAM in MB" $h $w $qemu_mem 2> $TMPFILE || return
@@ -1212,6 +1256,10 @@ advancedoptionsdialog()
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB, ${qemu_disk_type}]"
 		cmds[$i]="return 8"
+		i=$((i+1))
+
+		menu+=($i "qemu net opts [mac $qemu_net_nic_mac${qemu_net_nic_model:+, model $qemu_net_nic_model}, type ${qemu_net_type}]")
+		cmds[$i]="return 11"
 		i=$((i+1))
 
 		menu[$((i*2))]=$i
@@ -1409,6 +1457,7 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/13/Fedora Fedora 13
 	/releases/12/Fedora Fedora 12
 	/releases/11/Fedora Fedora 11
 	/releases/10/Fedora Fedora 10
@@ -1567,6 +1616,7 @@ while [ "$ret" != 0 ]; do
 		8) qemu_disk_dialog ;;
 		9) qemu_options_dialog ;;
 		10) dist_name_dialog ;;
+		11) qemu_net_dialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
@@ -1707,35 +1757,6 @@ echo
 
 create_libvirt_xml()
 {
-	local nettype=''
-	local netmodel=''
-	local macaddr=''
-	while [ -n "$1" ]; do
-		param="$1"
-		arg="$2"
-		shift
-		case "$param" in
-			-net)
-			if [ ${arg#nic} != "$arg" ]; then
-				macaddr=${arg##*macaddr=}
-				macaddr=${macaddr%%,*}
-				netmodel=${arg##*model=}
-				if [ "$arg" != "$netmodel" ]; then
-					netmodel=${netmodel%%,*}
-				else
-					netmodel=''
-				fi
-				shift
-			elif [ "$arg" = 'user' -o "$arg" = 'none' ]; then
-				nettype="$arg"
-				shift
-			fi
-			;;
-		esac
-	done
-
-	: ${netmodel:=rtl8139}
-
 	cat <<EOF
 <domain type='kvm'>
   <name>$dist</name>
@@ -1759,11 +1780,11 @@ create_libvirt_xml()
       <target dev='hda' bus='ide'/>
     </disk>
 EOF
-if [ "$nettype" = 'user' ]; then
+if [ "$qemu_net_type" = 'user' ]; then
 	cat <<EOF
     <interface type='user'>
-      <mac address='$macaddr'/>
-      <model type='$netmodel'/>
+      <mac address='$qemu_net_nic_mac'/>
+      ${qemu_net_nic_model:+<model type='$qemu_net_nic_model'/>}
     </interface>
 EOF
 fi
@@ -1784,7 +1805,11 @@ if [ -n "$qemu" ]; then
 
 	qemu_prepare_disk
 
-	set -- $qemu -hda "$qemu_disk" -m $qemu_mem $qemu_params
+	set -- -hda "$qemu_disk" -m $qemu_mem \
+		-net "nic${qemu_net_nic_mac:+,macaddr=$qemu_net_nic_mac}${qemu_net_nic_model:+,model=$qemu_net_nic_model}" \
+		-net "$qemu_net_type" \
+		 $qemu_params
+
 	if [ "$readonlymode" = yes ]; then
 		script="/dev/stdout"
 		install_script="/dev/stdout"
@@ -1798,9 +1823,9 @@ if [ -n "$qemu" ]; then
 	echo "to import the image to libvirt run"
 	echo "virsh -c qemu:///system define $libvirt_file"
 	echo -ne '#!/bin/sh\nexec ' > "$script"
-	shellquote "$@" >> "$script"
+	shellquote "$qemu" "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
-	set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" -m $qemu_mem -hda "$qemu_disk" $qemu_params
+	set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" "$@"
 	echo -ne '#!/bin/sh\nexec ' > "$install_script"
 	shellquote "$@" >> "$install_script"
 	echo ' "$@"'  >> "$install_script"
