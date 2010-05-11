@@ -297,7 +297,12 @@ echo=
 
 getbootloader()
 {
-	. /etc/sysconfig/bootloader
+	if [ -r "/etc/sysconfig/bootloader" ]; then
+		. /etc/sysconfig/bootloader
+	else
+		LOADER_TYPE="grub"
+	fi
+
 	echo $LOADER_TYPE
 }
 
