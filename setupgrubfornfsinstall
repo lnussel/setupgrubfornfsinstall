@@ -781,7 +781,7 @@ detect_ip()
 			shift
 		done
 		if [ -n "$ip" -o -n "$mac" ]; then
-			ifaces+=($iface)
+		        ifaces[${#ifaces[@]}]="$iface"
 		fi
 	done < $TMPFILE
 
@@ -1094,7 +1094,8 @@ qemu_disk_format_dialog()
 	formats=(`qemu-img --help| sed -ne '/^Supported formats:/{s/.*: //;p;q}'`)
 
 	for format in "${formats[@]}"; do
-		menu+=($i "$format")
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="$format"
 		i=$((i+1))
 	done
 
@@ -1155,7 +1156,8 @@ generic_list_dialog()
 	values=("$@")
 
 	for value in "${values[@]}"; do
-		menu+=($i "$value")
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="$value"
 		i=$((i+1))
 	done
 
@@ -1214,7 +1216,8 @@ advancedoptionsdialog()
 	i=$((i+1))
 
 	if [ -n "$qemu" ]; then
-		menu+=($i "Change Name [$dist]")
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="Change Name [$dist]"
 		cmds[$i]="return 10"
 		i=$((i+1))
 	fi
@@ -1263,7 +1266,8 @@ advancedoptionsdialog()
 		cmds[$i]="return 8"
 		i=$((i+1))
 
-		menu+=($i "qemu net opts [mac $qemu_net_nic_mac${qemu_net_nic_model:+, model $qemu_net_nic_model}, type ${qemu_net_type}]")
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="qemu net opts [mac $qemu_net_nic_mac${qemu_net_nic_model:+, model $qemu_net_nic_model}, type ${qemu_net_type}]"
 		cmds[$i]="return 11"
 		i=$((i+1))
 
@@ -1413,7 +1417,8 @@ opensuse_org_dialog()
 
 	while read url name; do
 		urls[${#urls[@]}]="$url"
-		menu+=($i "$name")
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="$name"
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
@@ -1498,8 +1503,9 @@ mandriva_dialog()
 	local mirror
 
 	while read url name; do
-		urls+=("$url")
-		menu+=($i "$name")
+		urls[${#urls[@]}]="$url"
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="$name"
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
