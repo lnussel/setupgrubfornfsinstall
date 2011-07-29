@@ -1013,6 +1013,11 @@ autodetecttypedialog()
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="Ubuntu"
+	cmds[$i]="greparch=0; isubuntu=1; return 5"
+	i=$((i+1))
+
+	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="specify URL manually"
 	cmds[$i]="greparch=0; return 98"
 	i=$((i+1))
@@ -1359,6 +1364,18 @@ kernelurl_from_insturl_fedora()
 	return 0
 }
 
+kernelurl_from_insturl_ubuntu()
+{
+	gui="" # TODO optionally set to gtk and append video=vesa:ywrap,mtrr vga=788
+	local subdir="/installer-i386/current/images/netboot$gui/ubuntu-installer/i386"
+	kernelurl="$insturl$subdir/linux"
+	initrdurl="$insturl$subdir/initrd.gz"
+	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
+	baseurl="$insturl"
+
+	return 0
+}
+
 slpdialog()
 {
 	local i=0
@@ -1494,6 +1511,43 @@ fedora_dialog()
 	dist=${menu[$((i*2+1))]}
 }
 
+ubuntu_dialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+	local mirror
+
+	while read url name; do
+		urls[${#urls[@]}]="$url"
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$name"
+		i=$((i+1))
+#FIXME: move to external file
+	done <<-EOF
+	natty Ubuntu 11.04 (Natty)
+	maverick Ubuntu 10.10 (Maverick)
+	lucid Ubuntu 10.04 (Lucid)
+	karmic Ubuntu 9.10 (Karmic)
+	jaunty Ubuntu 9.04 (Jaunty)
+	EOF
+
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	#insturl=http://archive.ubuntu.com/ubuntu/dists/${urls[$i]}/main/installer-i386/current/images/netboot
+	#isourl=$insturl/mini.iso
+	insturl=http://archive.ubuntu.com/ubuntu/dists/${urls[$i]}/main
+
+	kernelurl_from_insturl_ubuntu
+
+	dist=${menu[$((i*2+1))]}
+}
+
 mandriva_dialog()
 {
 	local i=0
@@ -1576,6 +1630,10 @@ case "$?" in
 		mandriva_dialog
 		verify_signatures=
 		;;
+	5)
+		ubuntu_dialog
+		verify_signatures=
+		;;
 	98)
 		manualurldialog
 		verify_signatures=1
@@ -1606,7 +1664,7 @@ if [ 0 = 1 ]; then
 	insturl=smb://10.0.2.4/qemu/${localinstpath##*/}
 fi
 
-if [ -z "$kernelurl" -o -z "$initrdurl" ]; then
+if [ \( -z "$kernelurl" -o -z "$initrdurl" \) -a -z "$isourl" ]; then
 	dialog "${bgt[@]}" --msgbox "No installation sources found" $h $w
 	die
 fi
@@ -1683,8 +1741,18 @@ compare_sha1sum()
 	fi
 }
 
+fetch_iso()
+{
+	echo "ISO: $isourl ..."
+	$echo $curl -f -o "$isolocal" "$isourl" || die
+}
+
 fetch_kernel()
 {
+	if [ -n "$isourl" ]; then
+		fetch_iso
+		return
+	fi
 	echo "Kernel: $kernelurl ..."
 	$echo $curl -f -o "$kernellocal" "$kernelurl" || die
 	echo "Initrd: $initrdurl ..."
@@ -1815,6 +1883,7 @@ if [ -n "$qemu" ]; then
 
 	kernellocal="$qemu_disk.install.kernel"
 	initrdlocal="$qemu_disk.install.initrd"
+	isolocal="$qemu_disk.install.iso"
 
 	fetch_kernel
 
@@ -1840,7 +1909,11 @@ if [ -n "$qemu" ]; then
 	echo -ne '#!/bin/sh\nexec ' > "$script"
 	shellquote "$qemu" "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
-	set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" "$@"
+	if [ -n "$isourl" ]; then
+		set -- $qemu "$@" -cdrom "$isolocal" -boot d
+	else
+		set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" "$@"
+	fi
 	echo -ne '#!/bin/sh\nexec ' > "$install_script"
 	shellquote "$@" >> "$install_script"
 	echo ' "$@"'  >> "$install_script"
