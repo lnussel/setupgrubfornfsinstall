@@ -336,6 +336,12 @@ ifaces=()
 
 vncssh=
 
+if [ -z "$qemu" -a -e /dev/kvm ] && reqcmd -t qemu-kvm; then
+	if dialog "${bgt[@]}" --yesno "Would you like to use QEMU/KVM?" $h $w; then
+		qemu=1
+	fi
+fi
+
 if [ -z "$qemu" ]; then
 	if which stat >/dev/null 2>&1; then
 		freemb=`stat -f -c '%f*%s' /boot`
