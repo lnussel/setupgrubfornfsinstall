@@ -161,6 +161,7 @@ qemu_disk=
 qemu_disk_set=
 qemu_disk_size="10240"
 qemu_disk_type=raw
+qemu_virtio=
 have_qemu_img=
 qemu_mem=
 qemu_params=
@@ -1151,6 +1152,12 @@ qemu_disk_dialog()
 				qemu_disk_format_dialog
 			fi
 		fi
+
+		if dialog "${bgt[@]}" --yesno "Use virtio?" $h $w; then
+			qemu_virtio="yes"
+		else
+			qemu_virtio=''
+		fi
 		break
 	done
 }
@@ -1278,7 +1285,7 @@ advancedoptionsdialog()
 		i=$((i+1))
 
 		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB, ${qemu_disk_type}]"
+		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB, ${qemu_disk_type}${qemu_virtio:+, virtio}]"
 		cmds[$i]="return 8"
 		i=$((i+1))
 
@@ -1850,6 +1857,12 @@ echo
 
 create_libvirt_xml()
 {
+	local disk_dev="hda"
+	local disk_bus="ide"
+	if [ -n "$qemu_virtio" ]; then
+		disk_dev="vda"
+		disk_bus="virtio"
+	fi
 	cat <<EOF
 <domain type='kvm'>
   <name>$dist</name>
@@ -1871,7 +1884,7 @@ create_libvirt_xml()
     <disk type='file' device='disk'>
       <driver name='qemu' type='$qemu_disk_type'/>
       <source file='$qemu_disk'/>
-      <target dev='hda' bus='ide'/>
+      <target dev='$disk_dev' bus='$disk_bus'/>
     </disk>
 EOF
 if [ "$qemu_net_type" = 'user' ]; then
@@ -1900,10 +1913,16 @@ if [ -n "$qemu" ]; then
 
 	qemu_prepare_disk
 
-	set -- -hda "$qemu_disk" -m $qemu_mem \
+	set -- -m $qemu_mem \
 		-net "nic${qemu_net_nic_mac:+,macaddr=$qemu_net_nic_mac}${qemu_net_nic_model:+,model=$qemu_net_nic_model}" \
 		-net "$qemu_net_type" \
 		 $qemu_params
+
+	if [ -n "$qemu_virtio" ]; then
+		set -- -drive file="$qemu_disk",if=virtio "$@"
+	else
+		set -- -hda "$qemu_disk" "$@"
+	fi
 
 	if [ "$readonlymode" = yes ]; then
 		script="/dev/stdout"
