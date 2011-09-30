@@ -648,27 +648,32 @@ mediatypedialog()
 		dialog "${bgt[@]}" --msgbox "Warning: The installation source does not provide GPG keys. YOU may not work because of this." $h $w || die
 	fi
 
+	local types=(0 HTTP 1 FTP)
 	if [ -z "$qemu" ]; then
-		dialog "${bgt[@]}" --menu "Choose Media Type" $h $w $mh 0 FTP 1 NFS 2 SLP 2> $TMPFILE || die
-		read ret < $TMPFILE
-	else
-		ret=0
+		types[${#types[@]}]="2"
+		types[${#types[@]}]="NFS"
+		types[${#types[@]}]="3"
+		types[${#types[@]}]="SLP"
 	fi
+
+	dialog "${bgt[@]}" --menu "Choose Media Type" $h $w $mh "${types[@]}" 2> $TMPFILE || die
+	read ret < $TMPFILE
 
 	case "$ret" in
 		0)
 			resolveordie "$host"
-			insturl=ftp://$ip/${instpath#*/*/}
+			insturl=http://$ip/${instpath#*/*/}
 		;;
 		1)
 			resolveordie "$host"
-			insturl=nfs://$ip$instpath
+			insturl=ftp://$ip/${instpath#*/*/}
 		;;
 		2)
-			insturl=slp
+			resolveordie "$host"
+			insturl=nfs://$ip$instpath
 		;;
 		3)
-			insturl=
+			insturl=slp
 		;;
 		*) die
 		;;
