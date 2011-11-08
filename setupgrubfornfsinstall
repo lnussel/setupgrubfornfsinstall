@@ -139,6 +139,9 @@ shellquote()
 	shift
 	for arg; do
 		echo -n ' '
+		if [ "$arg" != "${arg#-}" ]; then
+			echo -ne '\\\n\t'
+		fi
 		shellquote_one "$arg"
 	done 
 }
