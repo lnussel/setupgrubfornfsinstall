@@ -1521,6 +1521,7 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/16/Fedora Fedora 16
 	/releases/15/Fedora Fedora 15
 	/releases/14/Fedora Fedora 14
 	/releases/13/Fedora Fedora 13
@@ -1565,6 +1566,8 @@ ubuntu_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	precise Ubuntu 11.10 (Precise)
+	natty Ubuntu 11.04 (Natty)
 	natty Ubuntu 11.04 (Natty)
 	maverick Ubuntu 10.10 (Maverick)
 	lucid Ubuntu 10.04 (Lucid)
