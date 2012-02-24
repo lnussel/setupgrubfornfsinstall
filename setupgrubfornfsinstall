@@ -171,6 +171,9 @@ qemu_params=
 qemu_net_nic_mac=
 qemu_net_nic_model=
 qemu_net_type=user
+qemu_vga=
+qemu_vnc=
+qemu_vnc_display=
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
@@ -1204,6 +1207,12 @@ qemu_net_dialog()
 	: ${qemu_net_type:=user}
 }
 
+qemu_display_dialog()
+{
+	generic_list_dialog 'qemu_vga' "Choose Graphics Card" default cirrus std vmware qxl none
+	[ "$qemu_vga" != default ] || qemu_vga=
+}
+
 qemu_ram_dialog()
 {
 	dialog "${bgt[@]}" --inputbox "qemu RAM in MB" $h $w $qemu_mem 2> $TMPFILE || return
@@ -1296,6 +1305,11 @@ advancedoptionsdialog()
 		menu[${#menu[@]}]="qemu net opts [mac $qemu_net_nic_mac${qemu_net_nic_model:+, model $qemu_net_nic_model}, type ${qemu_net_type}]"
 		cmds[$i]="return 11"
 		i=$((i+1))
+
+#		menu[${#menu[@]}]="$i"
+#		menu[${#menu[@]}]="qemu graphics card [$qemu_vga]"
+#		cmds[$i]="return 12"
+#		i=$((i+1))
 
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="qemu options [$qemu_params]"
@@ -1711,6 +1725,7 @@ while [ "$ret" != 0 ]; do
 		9) qemu_options_dialog ;;
 		10) dist_name_dialog ;;
 		11) qemu_net_dialog ;;
+		12) qemu_display_dialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
