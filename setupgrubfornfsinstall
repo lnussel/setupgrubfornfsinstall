@@ -178,6 +178,7 @@ qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
 verify_signatures=
+insturl=
 
 helpandquit()
 {
@@ -194,6 +195,7 @@ OPTIONS:
 	--readonly	don't actually write files
 	--qemu[=binary]	use qemu
 	--qemu-disk=[file]  specify disk image for use with qemu
+	--url=URL       specify installation url directly
 EOF
 	exit 0
 }
@@ -229,6 +231,14 @@ while [ "$#" -gt 0 ]; do
 				shift
 			else
 				die "--qemu-disk requires an argument"
+			fi
+		;;
+		--url)
+			if [ -n "$arg" -a "$arg" = "${arg#-}" ]; then
+				insturl="$arg"
+				shift
+			else
+				die "--url requires an argument"
 			fi
 		;;
 		--help|-h) helpandquit ;;
@@ -327,7 +337,6 @@ kernelurl=
 kernellocal=
 initrdurl=
 initrdlocal=
-insturl=
 host=
 basepath=
 isfedora=
@@ -1646,7 +1655,16 @@ localinstall()
 	die 0
 }
 
-autodetecttypedialog 
+setexitcode()
+{
+	return $1
+}
+
+if [ -n "$insturl" ]; then
+	setexitcode 97
+else
+	autodetecttypedialog
+fi
 case "$?" in
 	0)
 		slpdialog
@@ -1672,6 +1690,10 @@ case "$?" in
 	5)
 		ubuntu_dialog
 		verify_signatures=
+		;;
+	97)
+		kernelurl_from_insturl
+		verify_signatures=1
 		;;
 	98)
 		manualurldialog
