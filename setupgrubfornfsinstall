@@ -77,7 +77,7 @@
 # 20.10.2008: add mouse as usb tablet for qemu
 #             use pcnet as default network card for qemu. better performance it seems
 #
-# ... now in git: http://git.opensuse.org/?p=people/lnussel/setupgrubfornfsinstall.git;a=summary
+# ... now in git: http://gitorious.org/opensuse/setupgrubfornfsinstall
 
 
 # by Ludwig Nussel <lnussel@suse.de>
