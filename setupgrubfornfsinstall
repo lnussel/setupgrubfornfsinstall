@@ -1030,7 +1030,7 @@ autodetecttypedialog()
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
-	menu[$((i*2+1))]="fedora.redhat.com"
+	menu[$((i*2+1))]="Fedora"
 	cmds[$i]="greparch=0; isfedora=1; return 3"
 	i=$((i+1))
 
@@ -1548,7 +1548,7 @@ fedora_dialog()
 	insturl=${urls[$i]}
 
 	dialog "${bgt[@]}" --inputbox "Coose a mirror.\nsee http://mirrors.fedoraproject.org/publiclist/Fedora/" $h $w \
-		"http://download.fedora.redhat.com/pub/fedora/linux/" 2> $TMPFILE || die
+		"http://download.fedoraproject.org/pub/fedora/linux/" 2> $TMPFILE || die
 	read mirror < $TMPFILE
 
 	insturl="$mirror$insturl"
@@ -1829,8 +1829,9 @@ fetch_kernel()
 		esac
 
 		case `file "$initrdlocal"` in
-			*gzip\ compressed\ data*initrd*) ;;
-			*gzip\ compressed\ data*)
+			*gzip\ compressed\ data*initrd*)
+			;;
+			*gzip\ compressed\ data*|*XZ\ compressed\ data)
 				if [ -z "$isfedora" -a -z "$ismandriva" ]; then
 					file_error_ask_continue "$initrdlocal"
 				fi
