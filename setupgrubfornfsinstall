@@ -1785,21 +1785,34 @@ compare_sha1sum()
 {
 	local contentfile="$1"
 	local file="$2"
-	local havesha1="$3"
-	local s
+	local localfile="$3"
+	local checksum=''
+	local hashprog=''
+	local method=''
+	local refsum=''
+
 
 	while [ "${file:0:1}" = '/' ]; do
 		file="${file:1}"
 	done
 
-	s=`awk -v f="$file" '$1 == "HASH" && $2 == "SHA1" && $4 == f { print $3 }' <  "$contentfile"`
+	read method refsum < <(awk -v f="$file" '$1 == "HASH" && $4 == f { print $2, $3; end }' <  "$contentfile")
 
-	if [ -z "$s" ]; then
+	if [ -z "$method" -o -z "$refsum" ]; then
 		if [ -z "$skip_empty" ]; then
 			dialog "${bgt[@]}" $defaultno --yesno "No check sum available for $file. Can't verify integrity. Continue anyways?" $h $w || die
 			skip_empty=1
 		fi
-	elif [ "$s" != "$havesha1" ]; then
+		return 1
+	fi
+	case "$method" in
+		SHA1) hashprog=sha1sum ;;
+		SHA256) hashprog=sha256sum ;;
+		*) dialog "${bgt[@]}" $defaultno --yesno "Hash method $h for $file unsupported. Can't verify integrity. Continue anyways?" $h $w || die
+		;;
+	esac
+	read checksum dummy < <($hashprog "$localfile" 2>/dev/null)
+	if [ "$refsum" != "$checksum" ]; then
 		dialog "${bgt[@]}" $defaultno --yesno "Check sum of $file is corrupt. Continue anyways?" $h $w || die
 	fi
 }
@@ -1858,26 +1871,18 @@ fetch_kernel()
 			fi
 		fi
 
-		local s1 s1 s3 dummy
-		read s1 dummy < <(sha1sum "$kernellocal" 2>/dev/null)
-		read s2 dummy < <(sha1sum "$initrdlocal" 2>/dev/null)
-		if [ -n "$splash" -a -f "$initrdlocal.splash" ]; then
-			read s3 dummy < <(sha1sum "$initrdlocal.splash" 2>/dev/null)
-		fi
-
 		if [ -n "$verify_signatures" ]; then
 			push_removeonexit "$kernellocal.content"
 			push_removeonexit "$kernellocal.content.asc"
-			if [ -n "$s1" -a -n "$s2" ] \
-				&& curlprobe "$baseurl/content" && curlprobe "$baseurl/content.asc" \
+			if curlprobe "$baseurl/content" && curlprobe "$baseurl/content.asc" \
 				&& $curl -s -f -o "$kernellocal.content" "$baseurl/content" \
 				&& $curl -s -f -o "$kernellocal.content.asc" "$baseurl/content.asc"; then
 				local gpgmsg=`gpgv -q --keyring=/usr/lib/rpm/gnupg/pubring.gpg "$kernellocal.content.asc" "$kernellocal.content" 2>&1`
 				if [ "$?" -eq 0 ]; then
-					compare_sha1sum "$kernellocal.content" "${kernelurl#$baseurl}" "$s1"
-					compare_sha1sum "$kernellocal.content" "${initrdurl#$baseurl}" "$s2"
+					compare_sha1sum "$kernellocal.content" "${kernelurl#$baseurl}" "$kernellocal"
+					compare_sha1sum "$kernellocal.content" "${initrdurl#$baseurl}" "$initrdlocal"
 					if [ -n "$splash" ]; then
-						compare_sha1sum "$kernellocal.content" "${splash#$baseurl}" "$s3"
+						compare_sha1sum "$kernellocal.content" "${splash#$baseurl}" "$initrdlocal.splash"
 					fi
 				else
 					if [ -n "$gpgmsg" ]; then
