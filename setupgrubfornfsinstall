@@ -178,6 +178,7 @@ qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
 localinstpath=
 parted=/usr/sbin/parted
 verify_signatures=
+keyring="/usr/lib/rpm/gnupg/pubring.gpg"
 insturl=
 
 helpandquit()
@@ -1778,9 +1779,15 @@ while [ "$ret" != 0 ]; do
 done
 
 if [ -n "$verify_signatures" ]; then
-	if [ ! -r /usr/lib/rpm/gnupg/pubring.gpg ]; then
-		dialog "${bgt[@]}" --msgbox "/usr/lib/rpm/gnupg/pubring.gpg is not installed. Signature check disabled." $h $w || die
-		verify_signatures=
+	if [ ! -r "$keyring" ]; then
+		if reqcmd -t gpg; then
+			keyring=`mktemp --tmpdir -q keyring-XXXXXX`
+			rpm -qia 'gpg-pubkey' | gpg --keyring="$keyring" --no-default-keyring --import || die
+			push_removeonexit "$keyring"
+		else
+			dialog "${bgt[@]}" --msgbox "$keyring or gpg is not installed. Signature check disabled." $h $w || die
+			verify_signatures=
+		fi
 	elif ! reqcmd -t gpgv; then
 		dialog "${bgt[@]}" --msgbox "gpgv is not available. Signature check disabled." $h $w || die
 		verify_signatures=
@@ -1895,7 +1902,7 @@ fetch_kernel()
 			if curlprobe "$baseurl/content" && curlprobe "$baseurl/content.asc" \
 				&& $curl -s -f -o "$kernellocal.content" "$baseurl/content" \
 				&& $curl -s -f -o "$kernellocal.content.asc" "$baseurl/content.asc"; then
-				local gpgmsg=`gpgv -q --keyring=/usr/lib/rpm/gnupg/pubring.gpg "$kernellocal.content.asc" "$kernellocal.content" 2>&1`
+				local gpgmsg=`gpgv -q --keyring="$keyring" "$kernellocal.content.asc" "$kernellocal.content" 2>&1`
 				if [ "$?" -eq 0 ]; then
 					compare_sha1sum "$kernellocal.content" "${kernelurl#$baseurl}" "$kernellocal"
 					compare_sha1sum "$kernellocal.content" "${initrdurl#$baseurl}" "$initrdlocal"
