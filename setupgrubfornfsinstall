@@ -358,6 +358,16 @@ if [ -z "$qemu" -a -e /dev/kvm ] && reqcmd -t qemu-kvm; then
 	fi
 fi
 
+checkreadonly()
+{
+	local file="$1"
+	if [ "$readonlymode" != yes -a ! -w "$file" ]; then
+		dialog "${bgt[@]}" --msgbox "$file not writeable!\nrunning in read only demo mode." $h $w || die
+		readonlymode=yes
+	fi
+}
+
+
 if [ -z "$qemu" ]; then
 	if which stat >/dev/null 2>&1; then
 		freemb=`stat -f -c '%f*%s' /boot`
@@ -369,6 +379,11 @@ if [ -z "$qemu" ]; then
 		unset freemb
 	fi
 
+	case "$bootloader" in
+		lilo|grub|grub2) ;;
+		*) bootloader='' ;;
+	esac
+
 	if [ -z "$bootloader" ]; then
 		dialog "${bgt[@]}" --msgbox "Unsupported bootloader, assuming grub in read only mode" $h $w || die
 		bootloader=grub
@@ -378,6 +393,7 @@ if [ -z "$qemu" ]; then
 	case "$bootloader" in
 		lilo)
 			bootloaderconf=/etc/lilo.conf
+			checkreadonly "$bootloaderconf"
 			;;
 		grub)
 			bootloaderconf=/boot/grub/menu.lst
@@ -386,13 +402,15 @@ if [ -z "$qemu" ]; then
 			if [ -z "$grubpartition" ]; then
 				 grubpartition=`awk '$1 == "gfxmenu" {if(match($2, /\((hd[[:digit:]]+,[[:digit:]]+)\)/,arr)) { print arr[0];exit}}' < /boot/grub/menu.lst`
 			fi
+			checkreadonly "$bootloaderconf"
+			;;
+		grub2)
+			reqcmd grub2-mkconfig
+			bootloaderconf="/etc/grub.d/99_setupgrubfornfsinstall"
+			checkreadonly "${bootloaderconf%/*}"
 			;;
 	esac
 
-	if [ "$readonlymode" != yes -a ! -w "$bootloaderconf" ]; then
-		dialog "${bgt[@]}" --msgbox "$bootloader config file not writeable!\nrunning in read only demo mode." $h $w || die
-		readonlymode=yes
-	fi
 else # qemu mode
 	if [ "$qemu" != 1 ]; then
 		reqcmd $qemu
@@ -1954,6 +1972,44 @@ fi
 EOF
 }
 
+get_device_for_mp()
+{
+	awk -vmp="$1" '$2 == mp && substr($1,0,1) == "/" {print $1; exit}' /proc/mounts
+}
+
+gen_grub2_entry()
+{
+	if [ ! -e $bootloaderconf -o "$readonlymode" = yes ]; then
+		cat > $bootloaderconf <<-EOF
+		#!/bin/sh
+		exec tail -n +3 \$0
+		# installation entries created by setupgrubfornfsinstall
+		#
+		EOF
+		[ "$readonlymode" = yes ] || chmod 755 "$bootloaderconf"
+	fi
+	. /usr/share/grub/grub-mkconfig_lib
+
+	local loc
+	loc=`get_device_for_mp /boot`
+	[ -n "$loc" ] || loc=`get_device_for_mp /`
+	[ -n "$loc" ] || die "failed to determine root device"
+
+	title="Installation $host/$dist"
+
+	echo ''
+	echo "menuentry \"$title\" --class gnu-linux --class gnu --class os {" >> $bootloaderconf
+
+	prepare_grub_to_access_device "$loc" | sed -e 's/^/    /' >> $bootloaderconf
+
+	echo "    linux $grubpartition$kernellocal $bootparams" >> $bootloaderconf
+	echo "    initrd $grubpartition$initrdlocal" >> $bootloaderconf
+
+	echo "}" >> $bootloaderconf
+
+	return 0
+}
+
 if [ -n "$qemu" ]; then
 
 	kernellocal="$qemu_disk.install.kernel"
@@ -2060,19 +2116,30 @@ else # regular setup with bootloader
 			echo "    kernel $grubpartition$kernellocal $bootparams" >> $bootloaderconf
 			echo "    initrd $grubpartition$initrdlocal" >> $bootloaderconf
 			;;
+
+		grub2)
+			(gen_grub2_entry) || die "grub2 config failed"
+			if [ "$readonlymode" != yes ]; then
+				if dialog "${bgt[@]}" --yesno "run grub2-mkconfig now?" $h $w; then
+					grub2-mkconfig > /boot/grub2/grub.cfg
+				else
+					echo "you need to run 'grub2-mkconfig > /boot/grub2/grub.cfg' manually"
+				fi
+			fi
+			;;
 	esac
 
 	if [ "$readonlymode" != yes ]; then
+		if [ "$bootloader" = "lilo" ]; then
+			dialog "${bgt[@]}" --msgbox "You need to run 'lilo' before rebooting" $h $w || die
+		fi
+
 		cat <<-EOF > $imagedir/kexec
 			#!/bin/sh
 			exec kexec -l --reset-vga --command-line="$bootparams" --initrd="$initrdlocal" -x $kernellocal
 		EOF
 		chmod 755 $imagedir/kexec
 		echo "kexec script generated as $imagedir/kexec"
-
-		if [ "$bootloader" = "lilo" ]; then
-			dialog "${bgt[@]}" --msgbox "You need to run 'lilo' before rebooting" $h $w || die
-		fi
 		echo "Done"
 	fi
 fi
