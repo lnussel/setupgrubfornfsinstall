@@ -1596,8 +1596,9 @@ ubuntu_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	precise Ubuntu 11.10 (Precise)
-	natty Ubuntu 11.04 (Natty)
+	quantal Ubuntu 12.xx (Quantal)
+	precise Ubuntu 12.04 (Precise)
+	oneric Ubuntu 11.10 (Quantal)
 	natty Ubuntu 11.04 (Natty)
 	maverick Ubuntu 10.10 (Maverick)
 	lucid Ubuntu 10.04 (Lucid)
