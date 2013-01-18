@@ -1895,6 +1895,7 @@ fetch_kernel()
 				esac
 			else
 				echo "no splash support"
+				splash=''
 			fi
 		fi
 
