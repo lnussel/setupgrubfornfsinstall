@@ -382,6 +382,7 @@ if [ -z "$qemu" ]; then
 
 	case "$bootloader" in
 		lilo|grub|grub2) ;;
+		grub2-efi) bootloader=grub2 ;;
 		*) bootloader='' ;;
 	esac
 
