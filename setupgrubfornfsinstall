@@ -1430,8 +1430,12 @@ kernelurl_from_insturl_fedora()
 
 kernelurl_from_insturl_ubuntu()
 {
+	local a="$arch"
+	if [ "$arch" = 'x86_64' ]; then
+		a='amd64'
+	fi
 	gui="" # TODO optionally set to gtk and append video=vesa:ywrap,mtrr vga=788
-	local subdir="/installer-i386/current/images/netboot$gui/ubuntu-installer/i386"
+	local subdir="/installer-$a/current/images/netboot$gui/ubuntu-installer/$a"
 	kernelurl="$insturl$subdir/linux"
 	initrdurl="$insturl$subdir/initrd.gz"
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
@@ -1599,7 +1603,8 @@ ubuntu_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	quantal Ubuntu 12.xx (Quantal)
+	raring Ubuntu 13.04 (Raring)
+	quantal Ubuntu 12.10 (Quantal)
 	precise Ubuntu 12.04 (Precise)
 	oneric Ubuntu 11.10 (Quantal)
 	natty Ubuntu 11.04 (Natty)
