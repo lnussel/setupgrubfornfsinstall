@@ -340,8 +340,10 @@ initrdurl=
 initrdlocal=
 host=
 basepath=
+issuse=1
 isfedora=
 ismandriva=
+isslackware=
 use_fixed_ip=
 client_ip=
 client_gateway=
@@ -948,7 +950,7 @@ vgadialog()
 	i=0
 	read i < $TMPFILE
 	vga=${vgaparams[$i]}
-	if [ -z "$isfedora" -a -z "$ismandriva" ]; then
+	if [ "$issuse" = 1 ]; then
 		splash=${descrs[$i]}
 		case "$splash" in
 			*[0-9]x[0-9]*)
@@ -971,7 +973,9 @@ makebootparams()
 		local dir=/${server#*/}
 		server=${server%%/*}
 		bootparams="$vga automatic=method:$method,network:dhcp,server:$server,directory:$dir"
-	else
+	elif [ -n "$isslackware" ]; then
+		bootparams="$vga SLACK_KERNEL=hugesmp.s REMOTE_URL=$insturl REMOTE_PATH=$slack_remote_path"
+	elif [ "$issuse" = 1 ]; then
 		if [ "$bootloader" != "lilo" ]; then
 			bootparams="$vga "
 		fi
@@ -1051,17 +1055,22 @@ autodetecttypedialog()
 
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="Fedora"
-	cmds[$i]="greparch=0; isfedora=1; return 3"
+	cmds[$i]="greparch=0; isfedora=1; issuse=0; return 3"
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="Mandriva"
-	cmds[$i]="greparch=0; ismandriva=1; return 4"
+	cmds[$i]="greparch=0; ismandriva=1; issuse=0; return 4"
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="Ubuntu"
-	cmds[$i]="greparch=0; isubuntu=1; return 5"
+	cmds[$i]="greparch=0; isubuntu=1; issuse=0; return 5"
+	i=$((i+1))
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="Slackware"
+	cmds[$i]="greparch=0; isslackware=1;issuse=0;  return 6"
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
@@ -1286,7 +1295,7 @@ advancedoptionsdialog()
 		i=$((i+1))
 	fi
 
-	if [ -z "$isfedora" -a -z "$ismandriva" ]; then
+	if [ "$issuse" = 1 ]; then
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="Specify IP manually"
 		cmds[$i]="return 2"
@@ -1626,6 +1635,39 @@ ubuntu_dialog()
 	dist=${menu[$((i*2+1))]}
 }
 
+slackware_dialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+
+	while read url name; do
+		urls[${#urls[@]}]="$url"
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$name"
+		i=$((i+1))
+	done <<-EOF
+	14.0 Slackware 14.0
+	EOF
+
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+
+	host="mirrors.slackware.com"
+	insturl="http://$host"
+	slack_remote_path="/slackware/slackware-${urls[$i]}"
+	kernelurl="$insturl$slack_remote_path/kernels/hugesmp.s/bzImage"
+	initrdurl="$insturl$slack_remote_path/isolinux/initrd.img"
+
+	dist=${menu[$((i*2+1))]}
+}
+
+
 mandriva_dialog()
 {
 	local i=0
@@ -1721,6 +1763,11 @@ case "$?" in
 		ubuntu_dialog
 		verify_signatures=
 		;;
+	6)
+		slackware_dialog
+		verify_signatures=
+		;;
+
 	97)
 		kernelurl_from_insturl
 		verify_signatures=1
@@ -1881,7 +1928,7 @@ fetch_kernel()
 			*gzip\ compressed\ data*initrd*)
 			;;
 			*gzip\ compressed\ data*|*XZ\ compressed\ data)
-				if [ -z "$isfedora" -a -z "$ismandriva" ]; then
+				if [ "$issuse" = 1 ]; then
 					file_error_ask_continue "$initrdlocal"
 				fi
 			;;
