@@ -2093,7 +2093,7 @@ if [ -n "$qemu" ]; then
 		 $qemu_params
 
 	if [ -n "$qemu_virtio" ]; then
-		set -- -drive file="$qemu_disk",if=virtio "$@"
+		set -- -drive file="$qemu_disk",if=none,id=hd1 -device virtio-blk,drive=hd1 "$@"
 	else
 		set -- -hda "$qemu_disk" "$@"
 	fi
