@@ -1614,6 +1614,7 @@ ubuntu_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	saucy Ubuntu 13.10 (Saucy)
 	raring Ubuntu 13.04 (Raring)
 	quantal Ubuntu 12.10 (Quantal)
 	precise Ubuntu 12.04 (Precise)
