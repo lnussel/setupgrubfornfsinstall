@@ -1,6 +1,6 @@
 #!/bin/bash
 # Dialog based wizard to create a suitable entry in the lilo or grub config
-# Copyright (C) 2004-2008 SUSE Linux Products GmbH, Nuernberg, Germany.
+# Copyright (C) 2004-2014 SUSE Linux Products GmbH, Nuernberg, Germany.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -87,6 +87,11 @@
 unset ${!LC_*}
 export LANG=POSIX
 export LC_COLLATE=POSIX
+
+arch=${SETUP_ARCH:-`uname -m`}
+case $arch in
+	i?86) arch=i386 ;;
+esac
  
 shopt -s nullglob
 
@@ -355,7 +360,7 @@ ifaces=()
 
 vncssh=
 
-if [ -z "$qemu" -a -e /dev/kvm ] && reqcmd -t qemu-kvm; then
+if [ -z "$qemu" -a -e /dev/kvm ] && \( reqcmd -t qemu-kvm || reqcmd -t "qemu-system-$arch" \); then
 	if dialog "${bgt[@]}" --yesno "Would you like to use QEMU/KVM?" $h $w; then
 		qemu=1
 	fi
@@ -421,6 +426,8 @@ else # qemu mode
 	else
 		if reqcmd -t qemu-kvm; then
 			qemu=qemu-kvm
+		elif reqcmd -t "qemu-system-$arch"; then
+			qemu="qemu-system-$arch"
 		else
 			reqcmd qemu
 			qemu=qemu
@@ -438,11 +445,6 @@ else
 	fi
 	curl="$curl --progress-bar"
 fi
-
-arch=${SETUP_ARCH:-`uname -m`}
-case $arch in
-	i?86) arch=i386 ;;
-esac
 
 if [ -z "$is64bit" ]; then
 	case "`uname -m`" in
