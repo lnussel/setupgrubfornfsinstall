@@ -1929,14 +1929,8 @@ fetch_kernel()
 				file_error_ask_continue "$kernellocal"
 			;;
 		esac
-
-		case `file "$initrdlocal"` in
-			*gzip\ compressed\ data*initrd*)
-			;;
+		case "`file "$initrdlocal"`" in
 			*gzip\ compressed\ data*|*XZ\ compressed\ data)
-				if [ "$issuse" = 1 ]; then
-					file_error_ask_continue "$initrdlocal"
-				fi
 			;;
 			*)
 				file_error_ask_continue "$initrdlocal"
