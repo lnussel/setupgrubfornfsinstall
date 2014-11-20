@@ -1841,9 +1841,9 @@ done
 if [ -n "$verify_signatures" ]; then
 	if [ ! -r "$keyring" ]; then
 		if reqcmd -t gpg; then
-			keyring=`mktemp --tmpdir -q keyring-XXXXXX`
-			rpm -qia 'gpg-pubkey' | gpg --keyring="$keyring" --no-default-keyring --import || die
-			push_removeonexit "$keyring"
+			gpghome=`mktemp --tmpdir -d -q setupgrubfornfsinstall-XXXXXX`
+			rpm -qia 'gpg-pubkey' | gpg --homedir="$gpghome" --import || die
+			push_removeonexit "$gpghome"
 		else
 			dialog "${bgt[@]}" --msgbox "$keyring or gpg is not installed. Signature check disabled." $h $w || die
 			verify_signatures=
