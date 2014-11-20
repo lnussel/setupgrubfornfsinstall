@@ -360,9 +360,11 @@ ifaces=()
 
 vncssh=
 
-if [ -z "$qemu" -a -e /dev/kvm ] && \( reqcmd -t qemu-kvm || reqcmd -t "qemu-system-$arch" \); then
-	if dialog "${bgt[@]}" --yesno "Would you like to use QEMU/KVM?" $h $w; then
-		qemu=1
+if [ -z "$qemu" -a -e /dev/kvm ] ; then
+	if reqcmd -t qemu-kvm || reqcmd -t "qemu-system-$arch"; then
+		if dialog "${bgt[@]}" --yesno "Would you like to use QEMU/KVM?" $h $w; then
+			qemu=1
+		fi
 	fi
 fi
 
