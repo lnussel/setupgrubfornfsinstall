@@ -1524,7 +1524,7 @@ opensuse_org_dialog()
 	http://download.opensuse.org/distribution/13.1/repo/oss/ 13.1
 	http://download.opensuse.org/distribution/12.3/repo/oss/ 12.3
 	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed
-	http://download.opensuse.org/distribution/leap/42.1-Current/repo/oss/ Leap 42.1
+	http://download.opensuse.org/distribution/leap/42.1/repo/oss/ Leap 42.1
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
