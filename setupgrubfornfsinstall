@@ -168,14 +168,14 @@ readonlymode=
 qemu=
 qemu_disk=
 qemu_disk_set=
-qemu_disk_size="10240"
-qemu_disk_type=raw
-qemu_virtio=
+qemu_disk_size=40
+qemu_disk_type=qcow2
+qemu_virtio=yes
 have_qemu_img=
 qemu_mem=
 qemu_params=
 qemu_net_nic_mac=
-qemu_net_nic_model=
+qemu_net_nic_model=virtio
 qemu_net_type=user
 qemu_vga=
 qemu_vnc=
@@ -1190,9 +1190,9 @@ qemu_disk_dialog()
 		qemu_disk_set=1
 
 		if [ ! -e "$qemu_disk" ]; then
-			dialog "${bgt[@]}" --inputbox "QEMU disk size in MB" $h $w $qemu_disk_size 2> $TMPFILE || die
+			dialog "${bgt[@]}" --inputbox "QEMU disk size in GB" $h $w $qemu_disk_size 2> $TMPFILE || die
 			read qemu_disk_size < $TMPFILE
-			if [ -z "$qemu_disk_size" -o "$qemu_disk_size" -lt "100" ]; then
+			if [ -z "$qemu_disk_size" -o "$qemu_disk_size" -lt "2" ]; then
 				dialog "${bgt[@]}" --msgbox "'$qemu_disk_size' too small" $h $w
 				continue
 			fi
@@ -1276,9 +1276,9 @@ qemu_prepare_disk()
 
 	[ "$readonlymode" = yes ] || > "$qemu_disk" || die
 	if [ "$qemu_disk_type" = 'raw' ]; then
-		$echo dd if=/dev/zero of="$qemu_disk" bs=1M count=1 seek="$qemu_disk_size" || die
+		$echo dd if=/dev/zero of="$qemu_disk" bs=1G count=1 seek="$qemu_disk_size" || die
 	else
-		$echo qemu-img create -f "$qemu_disk_type" "$qemu_disk" "$qemu_disk_size"M || die
+		$echo qemu-img create -f "$qemu_disk_type" "$qemu_disk" "$qemu_disk_size"G || die
 	fi
 }
 
@@ -1340,7 +1340,7 @@ advancedoptionsdialog()
 		i=$((i+1))
 
 		menu[$((i*2))]=$i
-		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}MB, ${qemu_disk_type}${qemu_virtio:+, virtio}]"
+		menu[$((i*2+1))]="qemu disk image [$qemu_disk, ${qemu_disk_size}GB, ${qemu_disk_type}${qemu_virtio:+, virtio}]"
 		cmds[$i]="return 8"
 		i=$((i+1))
 
