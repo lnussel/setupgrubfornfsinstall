@@ -1063,10 +1063,10 @@ autodetecttypedialog()
 	cmds[$i]="greparch=0; isfedora=1; issuse=0; return 3"
 	i=$((i+1))
 
-	menu[$((i*2))]=$i
-	menu[$((i*2+1))]="Mandriva"
-	cmds[$i]="greparch=0; ismandriva=1; issuse=0; return 4"
-	i=$((i+1))
+#	menu[$((i*2))]=$i
+#	menu[$((i*2+1))]="Mandriva"
+#	cmds[$i]="greparch=0; ismandriva=1; issuse=0; return 4"
+#	i=$((i+1))
 
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="Ubuntu"
@@ -1521,11 +1521,10 @@ opensuse_org_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	http://download.opensuse.org/distribution/13.2/repo/oss/ 13.2
-	http://download.opensuse.org/distribution/13.1/repo/oss/ 13.1
-	http://download.opensuse.org/distribution/12.3/repo/oss/ 12.3
 	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed
 	http://download.opensuse.org/distribution/leap/42.1/repo/oss/ Leap 42.1
+	http://download.opensuse.org/distribution/13.2/repo/oss/ 13.2
+	http://download.opensuse.org/distribution/13.1/repo/oss/ 13.1
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
@@ -1566,6 +1565,8 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/23/Server Fedora Server 23
+	/releases/23/Workstation Fedora Workstation 23
 	/releases/22/Server Fedora Server 22
 	/releases/22/Workstation Fedora Workstation 22
 	/releases/21/Fedora Fedora 21
@@ -1618,16 +1619,10 @@ ubuntu_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	saucy Ubuntu 13.10 (Saucy)
-	raring Ubuntu 13.04 (Raring)
-	quantal Ubuntu 12.10 (Quantal)
-	precise Ubuntu 12.04 (Precise)
-	oneric Ubuntu 11.10 (Quantal)
-	natty Ubuntu 11.04 (Natty)
-	maverick Ubuntu 10.10 (Maverick)
-	lucid Ubuntu 10.04 (Lucid)
-	karmic Ubuntu 9.10 (Karmic)
-	jaunty Ubuntu 9.04 (Jaunty)
+	wily Ubuntu 15.10 (Wily)
+	vivid Ubuntu 15.04 (Vivid)
+	trusty Ubuntu 14.04 LTS (Trusty)
+	precise Ubuntu 12.04 LTS (Precise)
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
@@ -1646,19 +1641,21 @@ slackware_dialog()
 {
 	local i=0
 	local menu
-	local urls
+	local dir
 	local url
 	local retry=2
-	declare -a urls
+	declare -a dir
 	declare -a menu
 
 	while read url name; do
-		urls[${#urls[@]}]="$url"
+		dir[${#dir[@]}]="$url"
 		menu[$((i*2))]=$i
 		menu[$((i*2+1))]="$name"
 		i=$((i+1))
 	done <<-EOF
-	14.0 Slackware 14.0
+	slackware64-14.1 Slackware 14.1 64bit
+	slackware-14.1 Slackware 14.1
+	slackware-14.0 Slackware 14.0
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
@@ -1667,8 +1664,11 @@ slackware_dialog()
 
 	host="mirrors.slackware.com"
 	insturl="http://$host"
-	slack_remote_path="/slackware/slackware-${urls[$i]}"
+	slack_remote_path="/slackware/${dir[$i]}"
 	kernelurl="$insturl$slack_remote_path/kernels/hugesmp.s/bzImage"
+	if ! curlprobe "$kernelurl"; then
+		kernelurl="$insturl$slack_remote_path/kernels/huge.s/bzImage"
+	fi
 	initrdurl="$insturl$slack_remote_path/isolinux/initrd.img"
 
 	dist=${menu[$((i*2+1))]}
@@ -1931,7 +1931,7 @@ fetch_kernel()
 			;;
 		esac
 		case "`file "$initrdlocal"`" in
-			*gzip\ compressed\ data*|*XZ\ compressed\ data)
+			*gzip\ compressed\ data*|*XZ\ compressed\ data|*cpio\ archive*)
 			;;
 			*)
 				file_error_ask_continue "$initrdlocal"
