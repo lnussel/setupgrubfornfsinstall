@@ -391,8 +391,7 @@ if [ -z "$qemu" ]; then
 	fi
 
 	case "$bootloader" in
-		lilo|grub|grub2) ;;
-		grub2-efi) bootloader=grub2 ;;
+		lilo|grub|grub2|grub2-efi) ;;
 		*) bootloader='' ;;
 	esac
 
@@ -416,7 +415,7 @@ if [ -z "$qemu" ]; then
 			fi
 			checkreadonly "$bootloaderconf"
 			;;
-		grub2)
+		grub2|grub2-efi)
 			reqcmd grub2-mkconfig
 			bootloaderconf="/etc/grub.d/99_setupgrubfornfsinstall"
 			checkreadonly "${bootloaderconf%/*}"
@@ -2068,8 +2067,10 @@ gen_grub2_entry()
 
 	prepare_grub_to_access_device "$loc" | sed -e 's/^/    /' >> $bootloaderconf
 
-	echo "    linux $grubpartition$kernellocal $bootparams" >> $bootloaderconf
-	echo "    initrd $grubpartition$initrdlocal" >> $bootloaderconf
+	local efi=''
+	[ "$bootloader" != 'grub2-efi' ] || efi=efi
+	echo "    linux$efi $grubpartition$kernellocal $bootparams" >> $bootloaderconf
+	echo "    initrd$efi $grubpartition$initrdlocal" >> $bootloaderconf
 
 	echo "}" >> $bootloaderconf
 
@@ -2183,7 +2184,7 @@ else # regular setup with bootloader
 			echo "    initrd $grubpartition$initrdlocal" >> $bootloaderconf
 			;;
 
-		grub2)
+		grub2|grub2-efi)
 			(gen_grub2_entry) || die "grub2 config failed"
 			if [ "$readonlymode" != yes ]; then
 				if dialog "${bgt[@]}" --yesno "run grub2-mkconfig now?" $h $w; then
