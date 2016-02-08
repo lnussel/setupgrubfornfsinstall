@@ -1113,7 +1113,7 @@ qemu_detect_defaults()
 		qemu_net_nic_mac=`printf "52:54:00:%02x:%02x:%02x\n" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256))`
 	fi
 	if [ -z "$qemu_params" ]; then
-		qemu_params="-no-reboot -usb -usbdevice tablet"
+		qemu_params="-usb -usbdevice tablet"
 	fi
 
 	if [ -z "$qemu_mem" ]; then
@@ -2010,9 +2010,6 @@ create_libvirt_xml()
     <acpi/>
   </features>
   <clock offset='utc'/>
-  <on_poweroff>destroy</on_poweroff>
-  <on_reboot>destroy</on_reboot>
-  <on_crash>destroy</on_crash>
   <devices>
     <emulator>/usr/bin/qemu-kvm</emulator>
     <disk type='file' device='disk'>
@@ -2114,9 +2111,9 @@ if [ -n "$qemu" ]; then
 	shellquote "$qemu" "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
 	if [ -n "$isourl" ]; then
-		set -- $qemu "$@" -cdrom "$isolocal" -boot d
+		set -- $qemu -cdrom "$isolocal" -boot d -no-reboot "$@"
 	else
-		set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" "$@"
+		set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" -no-reboot "$@"
 	fi
 	echo -ne '#!/bin/sh\nexec ' > "$install_script"
 	shellquote "$@" >> "$install_script"
