@@ -186,6 +186,7 @@ parted=/usr/sbin/parted
 verify_signatures=
 keyring="/usr/lib/rpm/gnupg/pubring.gpg"
 insturl=
+qemu_firmware=
 
 helpandquit()
 {
@@ -1243,6 +1244,16 @@ generic_list_dialog()
 	eval "${var}_idx=\"\$i\""
 }
 
+uefi_firmware_dialog()
+{
+	local files
+	declare -a files
+	files=(/usr/share/qemu/ovmf-*-code.bin)
+	files=("${files[@]##*/}")
+	generic_list_dialog 'qemu_firmware' "Choose BIOS" 'legacy' "${files[@]}"
+	[ "$qemu_firmware" != 'legacy' ] || qemu_firmware=
+}
+
 qemu_net_dialog()
 {
 	generic_list_dialog 'qemu_net_nic_model' "Choose NIC Model" 'default' `$qemu -net nic,model='?' 2>&1 |sed -ne '/Supported NIC models:/{s/.*: //;s/,/ /g;p;q}'`
@@ -1361,6 +1372,12 @@ advancedoptionsdialog()
 		menu[$((i*2+1))]="qemu options [$qemu_params]"
 		cmds[$i]="return 9"
 		i=$((i+1))
+
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="BIOS [${qemu_firmware:-legacy}]"
+		cmds[$i]="return 13"
+		i=$((i+1))
+
 	fi
 
 	menu[$((i*2))]=$i
@@ -1838,6 +1855,7 @@ while [ "$ret" != 0 ]; do
 		10) dist_name_dialog ;;
 		11) qemu_net_dialog ;;
 		12) qemu_display_dialog ;;
+		13) uefi_firmware_dialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
@@ -2009,6 +2027,21 @@ create_libvirt_xml()
   <os>
     <type arch='${arch/i386/i686}' machine='pc'>hvm</type>
     <boot dev='hd'/>
+EOF
+if [ -n "$qemu_firmware" ]; then
+	if [ "$qemu_firmware" != "${qemu_firmware%-code.bin}" ]; then
+		cat <<EOF
+     <loader readonly='yes' type='pflash'>$qemu_firmware</loader>
+     <nvram template='${qemu_firmware%-code.bin}-vars.bin'>$qemu_disk.vars</nvram>
+EOF
+	else
+		cat <<EOF
+     <loader readonly='yes' type='rom'>$qemu_firmware</loader>
+EOF
+	fi
+
+fi
+	cat <<EOF
   </os>
   <features>
     <acpi/>
@@ -2097,6 +2130,16 @@ if [ -n "$qemu" ]; then
 		set -- -drive file="$qemu_disk",if=none,id=hd1 -device virtio-blk,drive=hd1 "$@"
 	else
 		set -- -hda "$qemu_disk" "$@"
+	fi
+
+	if [ -n "$qemu_firmware" ]; then
+		if [ "$qemu_firmware" != "${qemu_firmware%-code.bin}" ]; then
+			set -- "$@" -drive "if=pflash,format=raw,readonly,file=/usr/share/qemu/$qemu_firmware"
+			$echo cp /usr/share/qemu/"${qemu_firmware%-code.bin}-vars.bin" "$qemu_disk.vars"
+			set -- "$@" -drive if=pflash,format=raw,file="$qemu_disk.vars"
+		else
+			set -- "$@" -bios "/usr/share/qemu/$qemu_firmware"
+		fi
 	fi
 
 	if [ "$readonlymode" = yes ]; then
