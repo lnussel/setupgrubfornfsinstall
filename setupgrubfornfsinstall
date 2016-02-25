@@ -391,7 +391,7 @@ if [ -z "$qemu" ]; then
 	fi
 
 	case "$bootloader" in
-		lilo|grub|grub2|grub2-efi) ;;
+		lilo|grub|grub2|grub2-efi|elilo) ;;
 		*) bootloader='' ;;
 	esac
 
@@ -418,6 +418,10 @@ if [ -z "$qemu" ]; then
 		grub2|grub2-efi)
 			reqcmd grub2-mkconfig
 			bootloaderconf="/etc/grub.d/99_setupgrubfornfsinstall"
+			checkreadonly "${bootloaderconf%/*}"
+			;;
+		elilo)
+			bootloaderconf="/etc/elilo.conf"
 			checkreadonly "${bootloaderconf%/*}"
 			;;
 	esac
@@ -2150,8 +2154,13 @@ else # regular setup with bootloader
 #[ "$readonlymode" != yes ] && push_removeonexit "$imagedir"
 
 	$echo mkdir -p "$imagedir"
-	initrdlocal="$imagedir/initrd"
-	kernellocal="$imagedir/linux"
+	if [ "$bootloader" = 'elilo' ]; then
+		initrdlocal="$imagedir/initrd-`shellfriendly "$dist"`"
+		initrdlocal="$imagedir/linux-`shellfriendly "$dist"`"
+	else
+		initrdlocal="$imagedir/initrd"
+		kernellocal="$imagedir/linux"
+	fi
 
 	fetch_kernel
 
@@ -2163,7 +2172,7 @@ else # regular setup with bootloader
 		lilo)
 			lilo_label="inst_$host"
 			n=1
-			while grep -q "label = $lilo_label\$" /etc/lilo.conf; do
+			while grep -q "label = $lilo_label\$" $bootloaderconf; do
 				lilo_label="inst_${host}_$n"
 				n=$((n+1))
 			done
@@ -2190,6 +2199,19 @@ else # regular setup with bootloader
 					echo "you need to run 'grub2-mkconfig > /boot/grub2/grub.cfg' manually"
 				fi
 			fi
+			;;
+		elilo)
+			lilo_label="installation"
+			n=1
+			while grep -q "label = $lilo_label\$" $bootloaderconf; do
+				lilo_label="installation_$n"
+				n=$((n+1))
+			done
+			echo "" >> $bootloaderconf
+			echo "image = $kernellocal" >> $bootloaderconf
+			echo "	label = $lilo_label" >> $bootloaderconf
+			echo "	initrd = $initrdlocal" >> $bootloaderconf
+			echo "	append = \"$bootparams\"" >> $bootloaderconf
 			;;
 	esac
 
