@@ -2003,7 +2003,7 @@ create_libvirt_xml()
 	fi
 	cat <<EOF
 <domain type='kvm'>
-  <name>$dist</name>
+  <name>${dist// /_}</name>
   <memory>$((qemu_mem*1024))</memory>
   <vcpu>1</vcpu>
   <os>
