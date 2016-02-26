@@ -187,6 +187,9 @@ verify_signatures=
 keyring="/usr/lib/rpm/gnupg/pubring.gpg"
 insturl=
 qemu_firmware=
+video_modes=('auto' "1024x768" "Textmode" "640x480" "800x600" "1280x1024" "Normal")
+# index to video_modes
+video_mode=0
 
 helpandquit()
 {
@@ -337,7 +340,6 @@ imagedir=/boot
 autofsbase=/mounts
 program="$0"
 serverlist="$program.serverlist"
-vga=
 splash=
 bootparams=
 baseurl=
@@ -934,45 +936,32 @@ vncdialog()
 
 vgadialog()
 {
-	local vgaparams
-	local descrs
-	declare -a vgaparams
-	declare -a descrs
-	if [ -n "$isfedora" ]; then
-		vgaparams=("graphical resolution=1024x768" "text" "graphical resolution=640x480" \
-			"graphical resolution=800x600" "graphical resolution=1280x1024" "")
-	elif [ -n "$ismandriva" ]; then
-		vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
-	else
-		vgaparams=("vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
-	fi
-	descrs=("1024x768" "Textmode" "640x480" "800x600" "1280x1024" "Normal")
-
 	local menustr=""
 	local i=0
-	for p in "${descrs[@]}"; do
-		menustr="$menustr $i ${descrs[$i]}"
+	for p in "${video_modes[@]}"; do
+		menustr="$menustr $i ${video_modes[$i]}"
 		i=$((i+1))
 	done
 	dialog "${bgt[@]}" --menu "Choose Resolution" $h $w $mh $menustr 2> $TMPFILE || die
 
-	i=0
-	read i < $TMPFILE
-	vga=${vgaparams[$i]}
-	if [ "$issuse" = 1 ]; then
-		splash=${descrs[$i]}
-		case "$splash" in
-			*[0-9]x[0-9]*)
-				splash=`printf "%04d%04d.spl\n" ${splash/x/ }`
-			;;
-			*) splash="" ;;
-		esac
-	fi
+	video_mode=
+	read video_mode < $TMPFILE
 }
 
 makebootparams()
 {
 	[ -z "$bootparams" ] || return 0
+
+	local vgaparams
+	local vga
+	declare -a vgaparams
+	if [ -n "$isfedora" ]; then
+		vgaparams=('', "graphical resolution=1024x768" "text" "graphical resolution=640x480" \
+			"graphical resolution=800x600" "graphical resolution=1280x1024" "")
+	else
+		vgaparams=('', "vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
+	fi
+	vga=${vgaparams[$video_mode]}
 
 	if [ -n "$isfedora" ]; then
 		bootparams="$vga method=$insturl"
@@ -1377,8 +1366,12 @@ advancedoptionsdialog()
 		menu[$((i*2+1))]="BIOS [${qemu_firmware:-legacy}]"
 		cmds[$i]="return 13"
 		i=$((i+1))
-
 	fi
+
+	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="Resolution [${video_modes[$video_mode]}]"
+	cmds[$i]="return 14"
+	i=$((i+1))
 
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="Edit command line and continue"
@@ -1833,7 +1826,6 @@ if [ \( -z "$kernelurl" -o -z "$initrdurl" \) -a -z "$isourl" ]; then
 	dialog "${bgt[@]}" --msgbox "No installation sources found" $h $w
 	die
 fi
-vgadialog
 if [ -n "$qemu" ]; then
 	qemu_detect_defaults
 elif [ -z "$grubpartition" ]; then
@@ -1856,6 +1848,7 @@ while [ "$ret" != 0 ]; do
 		11) qemu_net_dialog ;;
 		12) qemu_display_dialog ;;
 		13) uefi_firmware_dialog ;;
+		14) vgadialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
@@ -2116,6 +2109,16 @@ if [ -n "$qemu" ]; then
 	kernellocal="$qemu_disk.install.kernel"
 	initrdlocal="$qemu_disk.install.initrd"
 	isolocal="$qemu_disk.install.iso"
+
+	if [ "$issuse" = 1 -a $video_mode != 0 ]; then
+		splash=${video_modes[$video_mode]}
+		case "$splash" in
+			*[0-9]x[0-9]*)
+				splash=`printf "%04d%04d.spl\n" ${splash/x/ }`
+			;;
+			*) splash="" ;;
+		esac
+	fi
 
 	fetch_kernel
 
