@@ -2202,7 +2202,7 @@ else # regular setup with bootloader
 	$echo mkdir -p "$imagedir"
 	if [ "$bootloader" = 'elilo' ]; then
 		initrdlocal="$imagedir/initrd-`shellfriendly "$dist"`"
-		initrdlocal="$imagedir/linux-`shellfriendly "$dist"`"
+		kernellocal="$imagedir/linux-`shellfriendly "$dist"`"
 	else
 		initrdlocal="$imagedir/initrd"
 		kernellocal="$imagedir/linux"
