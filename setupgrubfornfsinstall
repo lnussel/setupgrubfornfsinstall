@@ -1072,6 +1072,11 @@ autodetecttypedialog()
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
+	menu[$((i*2+1))]="CentOS"
+	cmds[$i]="greparch=0; isfedora=1; issuse=0; return 7"
+	i=$((i+1))
+
+	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="specify URL manually"
 	cmds[$i]="greparch=0; return 98"
 	i=$((i+1))
@@ -1455,6 +1460,19 @@ kernelurl_from_insturl_fedora()
 	return 0
 }
 
+kernelurl_from_insturl_centos()
+{
+	insturl=$insturl/$arch
+	kernelurl=$insturl/isolinux/vmlinuz
+	initrdurl=$insturl/isolinux/initrd.img
+
+	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
+	dist=`url2txt "$insturl"`
+	baseurl="$insturl"
+
+	return 0
+}
+
 kernelurl_from_insturl_ubuntu()
 {
 	local a="$arch"
@@ -1535,6 +1553,7 @@ opensuse_org_dialog()
 #FIXME: move to external file
 	done <<-EOF
 	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed
+	http://download.opensuse.org/distribution/leap/42.2/repo/oss/ Leap 42.2
 	http://download.opensuse.org/distribution/leap/42.1/repo/oss/ Leap 42.1
 	http://download.opensuse.org/distribution/13.2/repo/oss/ 13.2
 	http://download.opensuse.org/distribution/13.1/repo/oss/ 13.1
@@ -1611,6 +1630,43 @@ fedora_dialog()
 	insturl="$mirror$insturl"
 
 	kernelurl_from_insturl_fedora
+	dist=${menu[$((i*2+1))]}
+}
+
+centos_dialog()
+{
+	local i=0
+	local menu
+	local urls
+	local url
+	local retry=2
+	declare -a urls
+	declare -a menu
+	local mirror
+
+	while read url name; do
+		urls[${#urls[@]}]="$url"
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="$name"
+		i=$((i+1))
+#FIXME: move to external file
+	done <<-EOF
+	/7/os CentOS 7
+	/6/os CentOS 6
+	EOF
+
+	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
+	i=0
+	read i < $TMPFILE
+	insturl=${urls[$i]}
+
+	dialog "${bgt[@]}" --inputbox "Coose a mirror.\nsee https://www.centos.org/download/mirrors/" $h $w \
+		"http://mirror.centos.org/centos/" 2> $TMPFILE || die
+	read mirror < $TMPFILE
+
+	insturl="$mirror$insturl"
+
+	kernelurl_from_insturl_centos
 	dist=${menu[$((i*2+1))]}
 }
 
@@ -1787,7 +1843,10 @@ case "$?" in
 		slackware_dialog
 		verify_signatures=
 		;;
-
+	7)
+		centos_dialog
+		verify_signatures=
+		;;
 	97)
 		kernelurl_from_insturl
 		verify_signatures=1
