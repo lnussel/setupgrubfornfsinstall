@@ -337,6 +337,7 @@ getbootloader()
 : ${bootloader:=`getbootloader`}
 bootloaderconf=
 imagedir=/boot
+hasbootpartition=`grep boot /etc/fstab | wc -l`
 autofsbase=/mounts
 program="$0"
 serverlist="$program.serverlist"
@@ -2159,6 +2160,10 @@ gen_grub2_entry()
 	echo "    initrd$efi $grubpartition$initrdlocal" >> $bootloaderconf
 
 	echo "}" >> $bootloaderconf
+	
+	if [ $hasbootpartition -eq 1 ]; then
+		sed -i 's|/boot/|/|g' $bootloaderconf
+	fi
 
 	return 0
 }
