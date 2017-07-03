@@ -1688,6 +1688,8 @@ ubuntu_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	zesty Ubuntu 17.04 (Zesty)
+	xenial Ubuntu 16.04 LTS (Xenial)
 	wily Ubuntu 15.10 (Wily)
 	vivid Ubuntu 15.04 (Vivid)
 	trusty Ubuntu 14.04 LTS (Trusty)
