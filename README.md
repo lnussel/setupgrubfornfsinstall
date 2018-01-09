@@ -6,6 +6,8 @@ installations. The script downloads kernel and initrd of the distribution and
 either creates a boot loader entry for easy reinstallation of physical systems
 or prepares a disk image for installation in qemu/kvm.
 
+[Screenshots](screenshots/screenshots.md)
+
 Features
 --------
 
