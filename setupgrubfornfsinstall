@@ -1550,6 +1550,7 @@ opensuse_org_dialog()
 #FIXME: move to external file
 	done <<-EOF
 	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed
+	http://download.opensuse.org/distribution/leap/15.1/repo/oss/ Leap 15.1
 	http://download.opensuse.org/distribution/leap/15.0/repo/oss/ Leap 15.0
 	http://download.opensuse.org/distribution/leap/42.3/repo/oss/ Leap 42.3
 	http://download.opensuse.org/distribution/leap/42.2/repo/oss/ Leap 42.2
