@@ -1593,29 +1593,12 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/31/Server Fedora Server 31
+	/releases/31/Workstation Fedora Workstation 31
+	/releases/30/Server Fedora Server 30
+	/releases/30/Workstation Fedora Workstation 30
 	/releases/29/Server Fedora Server 29
 	/releases/29/Workstation Fedora Workstation 29
-	/releases/28/Server Fedora Server 28
-	/releases/28/Workstation Fedora Workstation 28
-	/releases/23/Server Fedora Server 23
-	/releases/23/Workstation Fedora Workstation 23
-	/releases/22/Server Fedora Server 22
-	/releases/22/Workstation Fedora Workstation 22
-	/releases/21/Fedora Fedora 21
-	/releases/20/Fedora Fedora 20
-	/releases/19/Fedora Fedora 19
-	/releases/18/Fedora Fedora 18
-	/releases/17/Fedora Fedora 17
-	/releases/16/Fedora Fedora 16
-	/releases/15/Fedora Fedora 15
-	/releases/14/Fedora Fedora 14
-	/releases/13/Fedora Fedora 13
-	/releases/12/Fedora Fedora 12
-	/releases/11/Fedora Fedora 11
-	/releases/10/Fedora Fedora 10
-	/releases/9/Fedora Fedora 9
-	/releases/8/Fedora Fedora 8
-	/releases/7/Fedora Fedora 7
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
