@@ -2282,7 +2282,7 @@ if [ -n "$qemu" ]; then
 
 		echo "running '$install_script'"
 		if [ -n "$qemu_spice" ]; then
-			echo "use 'spicy -h $HOSTNAME -p $qemu_spice' to connect to console"
+			echo "use 'spicy -h `ip -o route get 255.0 2>/dev/null | sed -e 's/.*src \([^ ]*\) .*/\1/'` -p $qemu_spice' to connect to console"
 		fi
 		$echo "$install_script"
 		stat="$?"
