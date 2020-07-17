@@ -1560,6 +1560,7 @@ opensuse_org_dialog()
 	http://download.opensuse.org/distribution/leap/15.2/repo/oss/ Leap 15.2
 	http://download.opensuse.org/distribution/leap/15.1/repo/oss/ Leap 15.1
 	http://download.opensuse.org/distribution/leap/42.3/repo/oss/ Leap 42.3
+	http://download.opensuse.org/distribution/leap/15.2/microos/repo/MicroOS-15.2-x86_64-Media1/ MicroOS 15.2
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
