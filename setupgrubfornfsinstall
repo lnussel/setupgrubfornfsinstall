@@ -1601,6 +1601,8 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/32/Server Fedora Server 32
+	/releases/32/Workstation Fedora Workstation 32
 	/releases/31/Server Fedora Server 31
 	/releases/31/Workstation Fedora Workstation 31
 	/releases/30/Server Fedora Server 30
