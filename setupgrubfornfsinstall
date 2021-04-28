@@ -1259,10 +1259,10 @@ qemu_net_dialog()
 
 qemu_display_dialog()
 {
-	generic_list_dialog 'qemu_vga' "Choose Graphics Card" qxl default cirrus std vmware none
+	generic_list_dialog 'qemu_vga' "Choose Graphics Card" qxl default cirrus std virtio vmware none
 	[ "$qemu_vga" != default ] || qemu_vga=
 
-	if [ "$qemu_vga" = 'qxl' ] && dialog "${bgt[@]}" --yesno "Use SPICE?" $h $w; then
+	if [ "$qemu_vga" = 'qxl' -o "$qemu_vga" = 'virtio'  ] && dialog "${bgt[@]}" --yesno "Use SPICE?" $h $w; then
 		dialog "${bgt[@]}" --inputbox "SPICE port" $h $w $RANDOM 2> $TMPFILE || return
 		read qemu_spice < $TMPFILE
 	fi
