@@ -957,10 +957,10 @@ makebootparams()
 	local vga
 	declare -a vgaparams
 	if [ -n "$isfedora" ]; then
-		vgaparams=('', "graphical resolution=1024x768" "text" "graphical resolution=640x480" \
+		vgaparams=('' "graphical resolution=1024x768" "text" "graphical resolution=640x480" \
 			"graphical resolution=800x600" "graphical resolution=1280x1024" "")
 	else
-		vgaparams=('', "vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
+		vgaparams=('' "vga=791" "textmode=1" "vga=785" "vga=788" "vga=794" "vga=normal")
 	fi
 	vga=${vgaparams[$video_mode]}
 
@@ -1602,14 +1602,12 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/34/Server Fedora Server 34
+	/releases/34/Workstation Fedora Workstation 34
+	/releases/33/Server Fedora Server 32
+	/releases/33/Workstation Fedora Workstation 32
 	/releases/32/Server Fedora Server 32
 	/releases/32/Workstation Fedora Workstation 32
-	/releases/31/Server Fedora Server 31
-	/releases/31/Workstation Fedora Workstation 31
-	/releases/30/Server Fedora Server 30
-	/releases/30/Workstation Fedora Workstation 30
-	/releases/29/Server Fedora Server 29
-	/releases/29/Workstation Fedora Workstation 29
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
