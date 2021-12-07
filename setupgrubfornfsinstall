@@ -2033,7 +2033,7 @@ fetch_kernel()
 			;;
 		esac
 		case "`file "$initrdlocal"`" in
-			*gzip\ compressed\ data*|*XZ\ compressed\ data|*cpio\ archive*)
+			*gzip\ compressed\ data*|*XZ\ compressed\ data*|*cpio\ archive*)
 			;;
 			*)
 				file_error_ask_continue "$initrdlocal"
