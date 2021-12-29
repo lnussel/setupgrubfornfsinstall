@@ -965,7 +965,7 @@ makebootparams()
 	vga=${vgaparams[$video_mode]}
 
 	if [ -n "$isfedora" ]; then
-		bootparams="$vga method=$insturl"
+		bootparams="$vga inst.repo=$insturl"
 	elif [ -n "$ismandriva" ]; then
 		local method=${insturl%%://*}
 		local server=${insturl#*://}
@@ -989,10 +989,6 @@ makebootparams()
 		fi
 
 		bootparams="${bootparams}ramdisk_size=65536 install=$insturl$autoyast$ipparams$vncssh"
-	fi
-
-	if [ -n "$qemu" ]; then
-		bootparams="${bootparams} clock=pit"
 	fi
 }
 
@@ -1603,6 +1599,7 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
+	/releases/35/Everything Fedora 35
 	/releases/34/Server Fedora Server 34
 	/releases/34/Workstation Fedora Workstation 34
 	/releases/33/Server Fedora Server 32
