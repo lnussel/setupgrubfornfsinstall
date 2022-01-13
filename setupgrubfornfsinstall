@@ -994,6 +994,10 @@ makebootparams()
 
 		bootparams="${bootparams}ramdisk_size=65536 install=$insturl$autoyast$ipparams$vncssh"
 	fi
+
+	if [ -n "$qemu" ]; then
+		bootparams="$bootparams console=ttyS0,115200 console=tty0"
+	fi
 }
 
 bootparamdialog()
@@ -1936,8 +1940,6 @@ if [ -n "$verify_signatures" ]; then
 	fi
 fi
 
-makebootparams
-
 file_error_ask_continue()
 {
 	local file="$1"
@@ -2217,6 +2219,8 @@ gen_grub2_entry()
 
 	return 0
 }
+
+makebootparams
 
 if [ -n "$qemu" ]; then
 
