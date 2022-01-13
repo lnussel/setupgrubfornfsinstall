@@ -443,6 +443,10 @@ else # qemu mode
 			qemu=qemu
 		fi
 	fi
+	# when running in SSH switch to spice automatically
+	if [ -n "$SSH_CLIENT" ]; then
+		qemu_spice=$RANDOM
+	fi
 fi
 
 if [ "$readonlymode" = "yes" ]; then
