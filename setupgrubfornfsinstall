@@ -1548,7 +1548,14 @@ opensuse_org_dialog()
 	local urls
 	local url
 	local retry=2
+	local twversions
+	local v
 	declare -a urls
+	declare -a twversions
+
+	twversions=($(curl -f -s http://download.opensuse.org/history/list))
+	v="${twversions[0]}"
+	[ -n "$v" ] || v=$(date +%Y-%m-%d)
 
 	while read url name; do
 		urls[${#urls[@]}]="$url"
@@ -1557,13 +1564,16 @@ opensuse_org_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed
 	http://download.opensuse.org/distribution/leap/15.3/repo/oss/ Leap 15.3
-	http://download.opensuse.org/distribution/leap/15.2/repo/oss/ Leap 15.2
-	http://download.opensuse.org/distribution/leap/15.1/repo/oss/ Leap 15.1
-	http://download.opensuse.org/distribution/leap/42.3/repo/oss/ Leap 42.3
-	http://download.opensuse.org/distribution/leap/15.2/microos/repo/MicroOS-15.2-x86_64-Media1/ MicroOS 15.2
+	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed $v
 	EOF
+
+	for v in "${twversions[@]:1}"; do
+		urls[${#urls[@]}]="http://download.opensuse.org/history/$v/tumbleweed/repo/oss/"
+		menu[${#menu[@]}]="$i"
+		menu[${#menu[@]}]="Tumbleweed $v"
+		i=$((i+1))
+	done
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
 	i=0
@@ -1580,7 +1590,6 @@ opensuse_org_dialog()
 				[ -z "$i" ] || dist="$i"
 			fi
 		;;
-		*Tumbleweed*) dist="openSUSE $dist `date +%Y-%m-%d`";;
 		*) dist="openSUSE $dist" ;;
 	esac
 }
