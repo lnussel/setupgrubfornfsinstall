@@ -1120,10 +1120,6 @@ qemu_detect_defaults()
 		qemu_params="-usb -device usb-tablet"
 		qemu_params="$qemu_params -device virtio-serial-pci,id=virtio-serial0 -chardev spicevmc,id=charchannel0,name=vdagent -device virtserialport,chardev=charchannel0,id=channel0,name=com.redhat.spice.0"
 		qemu_params="$qemu_params -chardev stdio,mux=on,signal=off,id=serial0 -mon chardev=serial0,mode=readline -serial chardev:serial0"
-		if [ "$arch" = "i386" -o "$arch" = "x86_64" ]; then
-			#qemu_params="$qemu_params -global isa-fdc.driveA="
-			qemu_params="$qemu_params -device floppy,unit=0,drive="
-		fi
 	fi
 
 	# no more guessing, 2048 is ok in 2018
@@ -1463,8 +1459,8 @@ kernelurl_from_insturl_mandriva()
 kernelurl_from_insturl_fedora()
 {
 	insturl=$insturl/$arch/os
-	kernelurl=$insturl/isolinux/vmlinuz
-	initrdurl=$insturl/isolinux/initrd.img
+	kernelurl=$insturl/images/pxeboot/vmlinuz
+	initrdurl=$insturl/images/pxeboot/initrd.img
 
 	host=`echo "$insturl" | sed 's#^.*:/\+##;s#/.*##'`
 	dist=`url2txt "$insturl"`
@@ -1621,13 +1617,7 @@ fedora_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	/releases/35/Everything Fedora 35
-	/releases/34/Server Fedora Server 34
-	/releases/34/Workstation Fedora Workstation 34
-	/releases/33/Server Fedora Server 32
-	/releases/33/Workstation Fedora Workstation 32
-	/releases/32/Server Fedora Server 32
-	/releases/32/Workstation Fedora Workstation 32
+	/releases/39/Everything Fedora 39
 	EOF
 
 	dialog "${bgt[@]}" --menu "Choose distribution" $h $w $mh "${menu[@]}" 2> $TMPFILE || die
