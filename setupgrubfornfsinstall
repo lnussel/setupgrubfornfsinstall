@@ -1572,8 +1572,8 @@ opensuse_org_dialog()
 		i=$((i+1))
 #FIXME: move to external file
 	done <<-EOF
-	http://download.opensuse.org/distribution/leap/15.4/repo/oss/ Leap 15.4
-	http://download.opensuse.org/distribution/leap/15.3/repo/oss/ Leap 15.3
+	http://download.opensuse.org/distribution/leap/15.6/repo/oss/ Leap 15.6
+	http://download.opensuse.org/distribution/leap/15.5/repo/oss/ Leap 15.5
 	http://download.opensuse.org/tumbleweed/repo/oss/ Tumbleweed $v
 	EOF
 
