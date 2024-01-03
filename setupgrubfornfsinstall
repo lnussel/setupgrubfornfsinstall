@@ -182,6 +182,7 @@ qemu_spice=
 qemu_vnc=
 qemu_vnc_display=
 qemu_image_dirs=(/space "/space/$USER" /abuild "/abuild/$USER" /var/tmp /tmp)
+qemu_tpm=
 localinstpath=
 parted=/usr/sbin/parted
 verify_signatures=
@@ -1281,6 +1282,16 @@ qemu_ram_dialog()
 	read qemu_mem < $TMPFILE
 }
 
+toggle_qemu_tpm()
+{
+	if [ -z "$qemu_tpm" ]; then
+		qemu_tpm=enabled
+	else
+		qemu_tpm=
+	fi
+	return 0
+}
+
 qemu_options_dialog()
 {
 	dialog "${bgt[@]}" --inputbox "Additional qemu options" $h $w "$qemu_params"  2> $TMPFILE || return
@@ -1382,11 +1393,16 @@ advancedoptionsdialog()
 		menu[$((i*2+1))]="BIOS [${qemu_firmware:-legacy}]"
 		cmds[$i]="return 13"
 		i=$((i+1))
+
+		menu[$((i*2))]=$i
+		menu[$((i*2+1))]="TPM: ${qemu_tpm:-disabled}"
+		cmds[$i]="return 14"
+		i=$((i+1))
 	fi
 
 	menu[$((i*2))]=$i
 	menu[$((i*2+1))]="Resolution [${video_modes[$video_mode]}]"
-	cmds[$i]="return 14"
+	cmds[$i]="return 50"
 	i=$((i+1))
 
 	menu[$((i*2))]=$i
@@ -1913,7 +1929,8 @@ while [ "$ret" != 0 ]; do
 		11) qemu_net_dialog ;;
 		12) qemu_display_dialog ;;
 		13) uefi_firmware_dialog ;;
-		14) vgadialog ;;
+		14) toggle_qemu_tpm ;;
+		50) vgadialog ;;
 		99) bootparamdialog; break ;;
 		*) break ;;
 	esac
@@ -2266,6 +2283,11 @@ if [ -n "$qemu" ]; then
 			set -- "$@" -bios "/usr/share/qemu/$qemu_firmware"
 		fi
 	fi
+	if [ -n "$qemu_tpm" ]; then
+		set -- "$@" -chardev socket,id=chrtpm,path="$qemu_disk.tpm/swtpm-sock" \
+		  -tpmdev emulator,id=tpm0,chardev=chrtpm \
+		  -device tpm-tis,tpmdev=tpm0
+	fi
 
 	if [ "$readonlymode" = yes ]; then
 		script="/dev/stdout"
@@ -2279,15 +2301,32 @@ if [ -n "$qemu" ]; then
 	create_libvirt_xml $qemu_params > $libvirt_file
 	echo "to import the image to libvirt run"
 	echo "virsh -c qemu:///system define $libvirt_file"
-	echo -ne '#!/bin/sh\nexec ' > "$script"
-	shellquote "$qemu" "$@" >> "$script"
+	echo '#!/bin/sh' > "$script"
+	echo "img=\"$qemu_disk\"" >> "$script"
+	if [ -n "$qemu_tpm" ]; then
+		cat <<-EOF >> "$script"
+		mkdir -p "\$img.tpm" || :
+		swtpm socket -d --tpmstate dir="\$img.tpm" --ctrl type=unixio,path="\$img.tpm/swtpm-sock,terminate" --tpm2 --log file="\$img.tpm/log",level=20
+		sleep 1
+		EOF
+	fi
+	shellquote exec "$qemu" "$@" >> "$script"
 	echo ' "$@"'  >> "$script"
 	if [ -n "$isourl" ]; then
 		set -- $qemu -cdrom "$isolocal" -boot d -no-reboot "$@"
 	else
 		set -- $qemu -kernel "$kernellocal" -initrd "$initrdlocal" -append "$bootparams" -no-reboot "$@"
 	fi
-	echo -ne '#!/bin/sh\nexec ' > "$install_script"
+	echo '#!/bin/sh' > "$install_script"
+	echo "img=\"$qemu_disk\"" >> "$install_script"
+	if [ -n "$qemu_tpm" ]; then
+		cat <<-EOF >> "$install_script"
+		mkdir -p "\$img.tpm" || :
+		swtpm socket -d --tpmstate dir="\$img.tpm" --ctrl type=unixio,path="\$img.tpm/swtpm-sock,terminate" --tpm2 --log file="\$img.tpm/log",level=20
+		sleep 1
+		EOF
+	fi
+
 	shellquote "$@" >> "$install_script"
 	echo ' "$@"'  >> "$install_script"
 	if [ "$readonlymode" != yes ]; then
